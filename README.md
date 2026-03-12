@@ -4,14 +4,13 @@ Standalone interactive entity UI for the `switch_manager` Home Assistant custom 
 
 ## Goals
 - Keep Home Assistant auth server-side.
-- Reuse the existing HA Vibecode Agent on the Home Assistant host when available.
-- Fall back to the native Home Assistant websocket API when an agent is not available.
 - Run as a separate Node service alongside Home Assistant or on another reachable host.
 - Provide a switch-focused editor for button mappings, entity/device/area targets, and raw sequence steps.
+- Use direct Home Assistant websocket and REST access only.
 
 ## Architecture
 - Browser -> `Switch Manager Studio` web app
-- Studio backend -> HA Vibecode Agent (`:8099`) or Home Assistant websocket API
+- Studio backend -> Home Assistant websocket API and REST API
 - Home Assistant -> existing `custom_components/switch_manager`
 
 ## Environment
@@ -20,26 +19,19 @@ Create `/etc/default/switch-manager-studio` on the target host:
 
 ```bash
 HA_BASE_URL=http://homeassistant.local:8123
-HA_AGENT_URL=http://homeassistant.local:8099
-HA_AGENT_KEY=replace-with-live-agent-key
 PORT=8878
 ```
 
-Preferred runtime:
-- `HA_AGENT_URL` and `HA_AGENT_KEY` point at the existing HA Vibecode Agent.
-- `HA_TOKEN` remains supported as a fallback for environments that do not have the agent.
-- If `HA_AGENT_URL` is omitted, the backend derives it from `HA_BASE_URL` using port `8099`.
+`HA_BASE_URL` is optional. When present, the auth panel uses it as the default Home Assistant URL. The access token is entered at runtime in the studio UI and stays in server memory for the active session only.
 
 Optional paths:
 
 ```bash
-SWITCH_MANAGER_STORE_PATH=.storage/switch_manager
-SWITCH_MANAGER_BLUEPRINT_DIR=blueprints/switch_manager
 SWITCH_MANAGER_BLUEPRINT_IMAGE_DIR=/opt/switch-manager-studio/data/blueprints
 SWITCH_MANAGER_BLUEPRINT_OVERRIDE_IMAGE_DIR=/opt/switch-manager-studio/data/blueprints-overrides
 ```
 
-`SWITCH_MANAGER_BLUEPRINT_IMAGE_DIR` should contain the switch-manager blueprint `.png` files. The backend serves those locally while the blueprint YAML data comes from Home Assistant through the agent.
+`SWITCH_MANAGER_BLUEPRINT_IMAGE_DIR` should contain the switch-manager blueprint `.png` files. The backend serves those locally while the blueprint YAML data comes from Home Assistant through the `switch_manager` websocket commands.
 
 `SWITCH_MANAGER_BLUEPRINT_OVERRIDE_IMAGE_DIR` stores studio-managed image overrides created from the editor. The UI accepts PNG, JPG, WEBP, GIF, and SVG uploads, converts them to PNG, constrains them to the Switch Manager recommendation of 800px width or 500px height, and uses the result both in the editor canvas and exported blueprint packages.
 

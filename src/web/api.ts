@@ -1,4 +1,6 @@
 import type {
+  AuthSessionRequest,
+  AuthStatusResponse,
   AutomationSummary,
   BlueprintImageStatus,
   DevicePropertiesResponse,
@@ -10,11 +12,36 @@ import type {
   SwitchManagerConfig
 } from "../shared/types";
 
+export const AUTH_EXPIRED_EVENT = "switch-manager-studio:auth-expired";
+
+function notifyAuthExpired(): void {
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent(AUTH_EXPIRED_EVENT));
+  }
+}
+
+export class ApiError extends Error {
+  status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+  }
+}
+
+export function isAuthError(error: unknown): error is ApiError {
+  return error instanceof ApiError && error.status === 401;
+}
+
 async function parseResponse<T>(response: Response): Promise<T> {
   const body = await response.text();
   const parsed = body ? (JSON.parse(body) as T & { error?: string }) : ({} as T & { error?: string });
   if (!response.ok) {
-    throw new Error(parsed.error ?? `Request failed with ${response.status}`);
+    if (response.status === 401) {
+      notifyAuthExpired();
+    }
+    throw new ApiError(parsed.error ?? `Request failed with ${response.status}`, response.status);
   }
   return parsed;
 }
@@ -36,13 +63,19 @@ async function blobToBase64(blob: Blob): Promise<string> {
   });
 }
 
-async function parseError(response: Response): Promise<Error> {
+async function parseError(response: Response): Promise<ApiError> {
   const body = await response.text();
   try {
     const parsed = body ? (JSON.parse(body) as { error?: string }) : null;
-    return new Error(parsed?.error ?? `Request failed with ${response.status}`);
+    if (response.status === 401) {
+      notifyAuthExpired();
+    }
+    return new ApiError(parsed?.error ?? `Request failed with ${response.status}`, response.status);
   } catch {
-    return new Error(body || `Request failed with ${response.status}`);
+    if (response.status === 401) {
+      notifyAuthExpired();
+    }
+    return new ApiError(body || `Request failed with ${response.status}`, response.status);
   }
 }
 
@@ -52,7 +85,7 @@ function downloadNameFromDisposition(value: string | null, fallback: string): st
 }
 
 export async function fetchHealth(): Promise<HealthResponse> {
-  return parseResponse<HealthResponse>(await fetch("/api/health"));
+  return parseResponse<HealthResponse>(await fetch("/api/health", { cache: "no-store" }));
 }
 
 export async function fetchBlueprintImageStatus(blueprintId: string): Promise<BlueprintImageStatus> {
@@ -62,7 +95,29 @@ export async function fetchBlueprintImageStatus(blueprintId: string): Promise<Bl
 }
 
 export async function fetchSnapshot(): Promise<StudioSnapshot> {
-  return parseResponse<StudioSnapshot>(await fetch("/api/snapshot"));
+  return parseResponse<StudioSnapshot>(await fetch("/api/snapshot", { cache: "no-store" }));
+}
+
+export async function fetchAuthStatus(): Promise<AuthStatusResponse> {
+  return parseResponse<AuthStatusResponse>(await fetch("/api/auth/status", { cache: "no-store" }));
+}
+
+export async function createAuthSession(body: AuthSessionRequest): Promise<AuthStatusResponse> {
+  return parseResponse<AuthStatusResponse>(
+    await fetch("/api/auth/session", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    })
+  );
+}
+
+export async function clearAuthSession(): Promise<AuthStatusResponse> {
+  return parseResponse<AuthStatusResponse>(
+    await fetch("/api/auth/session", {
+      method: "DELETE"
+    })
+  );
 }
 
 export async function fetchDiscovery(): Promise<DiscoveryCandidate[]> {

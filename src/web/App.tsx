@@ -1,22 +1,28 @@
 import { startTransition, useDeferredValue, useEffect, useState } from "react";
 
 import {
+  AUTH_EXPIRED_EVENT,
   clearLearningLibrary,
+  clearAuthSession,
   controlEntity,
+  createAuthSession,
   deleteConfig,
   exportAutomation,
   exportBlueprintPackage,
+  fetchAuthStatus,
   fetchAutomations,
   fetchDeviceProperties,
   fetchDiscovery,
   fetchHealth,
   fetchLearning,
   fetchSnapshot,
+  isAuthError,
   saveConfig,
   setConfigEnabled,
   startLearningSession,
   stopLearningSession
 } from "./api";
+import { AuthPanel } from "./components/AuthPanel";
 import { AutomationPanel } from "./components/AutomationPanel";
 import { BlueprintPanel } from "./components/BlueprintPanel";
 import { ConfigRail } from "./components/ConfigRail";
@@ -35,6 +41,7 @@ import {
   resolvedConfigAreaId
 } from "./helpers";
 import type {
+  AuthStatusResponse,
   AutomationSummary,
   DevicePropertiesResponse,
   DiscoveryCandidate,
@@ -87,6 +94,11 @@ const WORKSPACE_OPTIONS: Array<{
 ];
 
 export function App() {
+  const [authStatus, setAuthStatus] = useState<AuthStatusResponse | null>(null);
+  const [authDialogOpen, setAuthDialogOpen] = useState(false);
+  const [authBusy, setAuthBusy] = useState(false);
+  const [authChecking, setAuthChecking] = useState(true);
+  const [authError, setAuthError] = useState<string | null>(null);
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [snapshot, setSnapshot] = useState<StudioSnapshot | null>(null);
   const [discovery, setDiscovery] = useState<DiscoveryCandidate[]>([]);
@@ -108,6 +120,7 @@ export function App() {
   const [message, setMessage] = useState<string | null>(null);
   const [fatalError, setFatalError] = useState<string | null>(null);
   const [activeWorkspace, setActiveWorkspace] = useState<WorkspaceMode>("editor");
+  const authenticated = Boolean(authStatus?.authenticated);
 
   const deferredConfigSearch = useDeferredValue(configSearch);
 
@@ -122,8 +135,50 @@ export function App() {
       (!selectedStoredConfig || JSON.stringify(draft) !== JSON.stringify(selectedStoredConfig))
   );
 
+  function resetStudioState(): void {
+    startTransition(() => {
+      setHealth(null);
+      setSnapshot(null);
+      setDiscovery([]);
+      setAutomations([]);
+      setLearning(null);
+      setProperties(null);
+      setPropertyDrawerOpen(false);
+      setSelectedConfigId("");
+      setDraft(null);
+      setSelectedButtonIndex(0);
+      setSelectedActionIndex(0);
+      setSelectedStepIndex(0);
+      setSelectedVirtualPressCount(2);
+      setAutomationTarget("native");
+      setActiveWorkspace("editor");
+      setConfigSearch("");
+    });
+  }
+
   useEffect(() => {
-    void loadStudio();
+    void loadAuthState();
+  }, []);
+
+  useEffect(() => {
+    const handleAuthExpired = () => {
+      resetStudioState();
+      setAuthBusy(false);
+      setAuthChecking(false);
+      setAuthDialogOpen(false);
+      setAuthError("Session expired. Enter a Home Assistant token again.");
+      setFatalError(null);
+      setMessage(null);
+      setLoading(false);
+      setAuthStatus((current) => ({
+        authenticated: false,
+        haBaseUrl: null,
+        defaultHaBaseUrl: current?.defaultHaBaseUrl ?? null
+      }));
+    };
+
+    window.addEventListener(AUTH_EXPIRED_EVENT, handleAuthExpired);
+    return () => window.removeEventListener(AUTH_EXPIRED_EVENT, handleAuthExpired);
   }, []);
 
   useEffect(() => {
@@ -142,6 +197,28 @@ export function App() {
     }
   }, [activeWorkspace, draft, selectedBlueprint]);
 
+  async function loadAuthState(preferredConfigId?: string): Promise<void> {
+    setAuthChecking(true);
+    setAuthError(null);
+    setFatalError(null);
+    try {
+      const nextStatus = await fetchAuthStatus();
+      setAuthStatus(nextStatus);
+      if (nextStatus.authenticated) {
+        await loadStudio(preferredConfigId);
+      } else {
+        resetStudioState();
+        setLoading(false);
+      }
+    } catch (error) {
+      resetStudioState();
+      setLoading(false);
+      setFatalError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setAuthChecking(false);
+    }
+  }
+
   async function loadStudio(preferredConfigId?: string): Promise<void> {
     setLoading(true);
     setFatalError(null);
@@ -156,6 +233,15 @@ export function App() {
 
       startTransition(() => {
         setHealth(nextHealth);
+        setAuthStatus((current) =>
+          current
+            ? {
+                ...current,
+                authenticated: true,
+                haBaseUrl: nextHealth.haBaseUrl
+              }
+            : current
+        );
         setSnapshot(nextSnapshot);
         setDiscovery(discoveryResult);
         setAutomations(automationsResult);
@@ -174,6 +260,9 @@ export function App() {
         setSelectedVirtualPressCount(2);
       });
     } catch (error) {
+      if (isAuthError(error)) {
+        return;
+      }
       setFatalError(error instanceof Error ? error.message : String(error));
     } finally {
       setLoading(false);
@@ -185,6 +274,40 @@ export function App() {
       setLearning(await fetchLearning());
     } catch {
       // Keep the last known learning state in the UI.
+    }
+  }
+
+  async function handleAuthSubmit(credentials: { accessToken: string; haBaseUrl: string }): Promise<void> {
+    setAuthBusy(true);
+    setAuthError(null);
+    setFatalError(null);
+    try {
+      const nextStatus = await createAuthSession(credentials);
+      setAuthStatus(nextStatus);
+      setAuthDialogOpen(false);
+      await loadStudio();
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setAuthBusy(false);
+      setAuthChecking(false);
+    }
+  }
+
+  async function handleSignOut(): Promise<void> {
+    setAuthBusy(true);
+    setAuthError(null);
+    try {
+      const nextStatus = await clearAuthSession();
+      resetStudioState();
+      setAuthStatus(nextStatus);
+      setAuthDialogOpen(false);
+      setLoading(false);
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setAuthBusy(false);
+      setAuthChecking(false);
     }
   }
 
@@ -500,6 +623,27 @@ export function App() {
       : `Button ${selectedButtonIndex + 1} action ${selectedActionIndex + 1}`;
   const activeWorkspaceOption = WORKSPACE_OPTIONS.find((option) => option.id === activeWorkspace) ?? WORKSPACE_OPTIONS[0];
 
+  if (authChecking && authStatus === null) {
+    return (
+      <div className="studio-auth-shell">
+        <section className="panel loading-panel">Checking saved Home Assistant session...</section>
+      </div>
+    );
+  }
+
+  if (!authenticated) {
+    return (
+      <AuthPanel
+        blocking
+        busy={authBusy}
+        error={authError ?? fatalError}
+        onSubmit={(credentials) => void handleAuthSubmit(credentials)}
+        open
+        status={authStatus}
+      />
+    );
+  }
+
   function renderBlueprintPanel(
     onSelectButton: (index: number) => void
   ) {
@@ -552,12 +696,19 @@ export function App() {
   return (
     <div className="studio-shell">
       <ConfigRail
+        authBusy={authBusy}
+        authStatus={authStatus}
         blueprintsById={blueprintsById}
         configSearch={configSearch}
         configs={filteredConfigs}
         health={health}
         onConfigSearchChange={setConfigSearch}
+        onOpenAuth={() => {
+          setAuthError(null);
+          setAuthDialogOpen(true);
+        }}
         onSelectConfig={selectConfig}
+        onSignOut={() => void handleSignOut()}
         selectedConfigId={selectedConfigId}
         snapshot={snapshot}
       />
@@ -799,6 +950,15 @@ export function App() {
         onControl={(entityId, action, value) => void handlePropertyControl(entityId, action, value)}
         open={propertyDrawerOpen}
         properties={properties}
+      />
+
+      <AuthPanel
+        busy={authBusy}
+        error={authError}
+        onClose={() => setAuthDialogOpen(false)}
+        onSubmit={(credentials) => void handleAuthSubmit(credentials)}
+        open={authDialogOpen}
+        status={authStatus}
       />
     </div>
   );

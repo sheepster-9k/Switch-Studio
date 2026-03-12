@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 
 import type {
+  AuthStatusResponse,
   HealthResponse,
   StudioSnapshot,
   SwitchManagerBlueprint,
@@ -9,24 +10,32 @@ import type {
 import { areaNameById, countActiveActions, countTotalActions, resolvedConfigAreaId } from "../helpers";
 
 interface ConfigRailProps {
+  authBusy: boolean;
+  authStatus: AuthStatusResponse | null;
   blueprintsById: Map<string, SwitchManagerBlueprint>;
   configSearch: string;
   configs: SwitchManagerConfig[];
   health: HealthResponse | null;
   onConfigSearchChange: (value: string) => void;
+  onOpenAuth: () => void;
   onSelectConfig: (config: SwitchManagerConfig) => void;
+  onSignOut: () => void;
   selectedConfigId: string;
   snapshot: StudioSnapshot | null;
 }
 
 export function ConfigRail(props: ConfigRailProps) {
   const {
+    authBusy,
+    authStatus,
     blueprintsById,
     configSearch,
     configs,
     health,
     onConfigSearchChange,
+    onOpenAuth,
     onSelectConfig,
+    onSignOut,
     selectedConfigId,
     snapshot
   } = props;
@@ -75,6 +84,15 @@ export function ConfigRail(props: ConfigRailProps) {
   }, [groupSignature]);
 
   const searchActive = configSearch.trim().length > 0;
+  const connected = Boolean(authStatus?.authenticated && health?.ok);
+  const statusTitle = connected ? "Connected" : authStatus?.authenticated ? "Session active" : "Not connected";
+  const statusCopy = connected
+    ? `${health?.version ?? "Home Assistant"} reachable at ${authStatus?.haBaseUrl ?? health?.haBaseUrl ?? ""}`.trim()
+    : authStatus?.authenticated
+      ? health?.error ?? authStatus?.haBaseUrl ?? "Session is active."
+      : authStatus?.defaultHaBaseUrl
+        ? `Enter a long-lived access token for ${authStatus.defaultHaBaseUrl}.`
+        : "Enter a Home Assistant URL and long-lived access token.";
 
   return (
     <aside className="studio-sidebar">
@@ -95,14 +113,20 @@ export function ConfigRail(props: ConfigRailProps) {
 
       <div className="status-block">
         <div>
-          <span className={`status-dot ${health?.ok ? "status-dot--ok" : ""}`}></span>
-          <strong>{health?.ok ? "Connected" : "Needs auth"}</strong>
+          <span className={`status-dot ${connected ? "status-dot--ok" : ""}`}></span>
+          <strong>{statusTitle}</strong>
         </div>
-        <p>
-          {health?.ok
-            ? `${health.version ?? "Home Assistant"} reachable`
-            : health?.error ?? "No HA agent key or HA token configured"}
-        </p>
+        <p>{statusCopy}</p>
+        <div className="status-block__actions">
+          <button className="button button--ghost" disabled={authBusy} onClick={onOpenAuth} type="button">
+            {authStatus?.authenticated ? "Change token" : "Connect"}
+          </button>
+          {authStatus?.authenticated ? (
+            <button className="button button--ghost" disabled={authBusy} onClick={onSignOut} type="button">
+              Sign out
+            </button>
+          ) : null}
+        </div>
       </div>
 
       <div className="accordion-toolbar">

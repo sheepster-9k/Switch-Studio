@@ -152,6 +152,17 @@ export interface HealthResponse {
   error?: string;
 }
 
+export interface AuthStatusResponse {
+  authenticated: boolean;
+  haBaseUrl: string | null;
+  defaultHaBaseUrl: string | null;
+}
+
+export interface AuthSessionRequest {
+  haBaseUrl: string;
+  accessToken: string;
+}
+
 export interface SaveConfigRequest {
   config: SwitchManagerConfig;
 }

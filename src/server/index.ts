@@ -1,14 +1,15 @@
 import { constants } from "node:fs";
 import { access, mkdir, readFile, unlink, writeFile } from "node:fs/promises";
-import { basename, dirname, extname, resolve } from "node:path";
+import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { gzipSync } from "node:zlib";
 
 import fastifyStatic from "@fastify/static";
-import Fastify from "fastify";
+import Fastify, { type FastifyReply, type FastifyRequest } from "fastify";
 import { stringify as stringifyYaml } from "yaml";
 
 import type {
+  AuthSessionRequest,
   AutomationSummary,
   AreaSummary,
   BlueprintImageStatus,
@@ -29,23 +30,11 @@ import type {
   SwitchManagerConfig,
   SwitchManagerVirtualAction
 } from "../shared/types.js";
-import { HomeAssistantAgentClient } from "./agentClient.js";
+import { StudioAuthManager } from "./auth.js";
 import { loadConfig, type StudioConfig } from "./config.js";
 import { HomeAssistantClient } from "./haClient.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-
-type StudioBackendMode = "agent" | "websocket" | "none";
-
-interface SwitchManagerStoreFile {
-  version?: number;
-  minor_version?: number;
-  key?: string;
-  data?: {
-    version?: string;
-    managed_switches?: Record<string, Record<string, unknown>>;
-  };
-}
 
 interface SwitchManagerLearningStoreFile {
   data?: {
@@ -56,21 +45,9 @@ interface SwitchManagerLearningStoreFile {
   library?: Array<Record<string, unknown>>;
 }
 
-interface BlueprintFileEntry {
-  path: string;
-  name: string;
-  modified: number;
-  isYaml: boolean;
-}
-
 interface BlueprintPackageEntry {
   data: Buffer;
   name: string;
-}
-
-interface CachedBlueprintCatalog {
-  signature: string;
-  blueprints: SwitchManagerBlueprint[];
 }
 
 interface RegistryEntityLink {
@@ -94,8 +71,6 @@ interface RegistryDeviceLink {
   identifiers: string[];
   entityIds: string[];
 }
-
-const blueprintCatalogCache = new Map<string, CachedBlueprintCatalog>();
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -236,22 +211,8 @@ function normalizeConfigForSave(config: SwitchManagerConfig): Record<string, unk
   };
 }
 
-function normalizeStoreConfigForSave(config: SwitchManagerConfig): Record<string, unknown> {
-  const { id: _ignoredId, ...next } = normalizeConfigForSave(config);
-  return next;
-}
-
 function normalizeConfigFromStore(id: string, raw: Record<string, unknown>): SwitchManagerConfig {
   return normalizeConfig({ id, ...raw });
-}
-
-function normalizeStateSummary(raw: Record<string, unknown>): Record<string, unknown> {
-  return {
-    entity_id: asString(raw.entity_id),
-    state: asNullableString(raw.state),
-    friendly_name: asString(raw.friendly_name),
-    domain: asString(raw.domain)
-  };
 }
 
 function uniqueStrings(values: Array<string | null | undefined>): string[] {
@@ -593,18 +554,20 @@ function fallbackBlueprintDefinition(blueprint: SwitchManagerBlueprint): Record<
 }
 
 async function loadRawBlueprintDefinition(
-  client: HomeAssistantAgentClient,
-  config: StudioConfig,
+  client: HomeAssistantClient,
   blueprintId: string
 ): Promise<Record<string, unknown> | null> {
   const safeBlueprintId = sanitizeBlueprintId(blueprintId);
-  if (!safeBlueprintId || !client.hasKey) {
+  if (!safeBlueprintId) {
     return null;
   }
 
   try {
-    const directory = config.switchManagerBlueprintDir.replace(/\/+$/, "");
-    const parsed = await client.parseYaml(`${directory}/${safeBlueprintId}.yaml`);
+    const result = await client.call<{ definition?: Record<string, unknown> | null }>({
+      type: "switch_manager/blueprints/source",
+      blueprint_id: safeBlueprintId
+    });
+    const parsed = result.definition;
     return isRecord(parsed) ? parsed : null;
   } catch {
     return null;
@@ -697,10 +660,6 @@ async function loadBlueprintImageBuffer(
     return bundledImage;
   }
 
-  if (!wsClient.hasToken) {
-    return null;
-  }
-
   const response = await wsClient.fetch(`/assets/switch_manager/${encodeURIComponent(blueprintId)}.png`);
   if (!response.ok) {
     return null;
@@ -784,19 +743,17 @@ async function loadBlueprintImageStatus(
     };
   }
 
-  if (wsClient.hasToken) {
-    const response = await wsClient.fetch(`/assets/switch_manager/${encodeURIComponent(blueprintId)}.png`);
-    if (response.ok) {
-      const buffer = Buffer.from(await response.arrayBuffer());
-      const dimensions = readPngDimensions(buffer);
-      return {
-        blueprintId,
-        hasImage: true,
-        hasOverride: false,
-        width: dimensions?.width ?? null,
-        height: dimensions?.height ?? null
-      };
-    }
+  const response = await wsClient.fetch(`/assets/switch_manager/${encodeURIComponent(blueprintId)}.png`);
+  if (response.ok) {
+    const buffer = Buffer.from(await response.arrayBuffer());
+    const dimensions = readPngDimensions(buffer);
+    return {
+      blueprintId,
+      hasImage: true,
+      hasOverride: false,
+      width: dimensions?.width ?? null,
+      height: dimensions?.height ?? null
+    };
   }
 
   return {
@@ -897,13 +854,12 @@ function buildTarArchive(entries: BlueprintPackageEntry[]): Buffer {
 }
 
 async function buildBlueprintExportPackage(args: {
-  agentClient: HomeAssistantAgentClient;
   wsClient: HomeAssistantClient;
   config: StudioConfig;
   draft: SwitchManagerConfig;
   blueprint: SwitchManagerBlueprint;
 }): Promise<{ content: Buffer; fileName: string }> {
-  const rawBlueprint = await loadRawBlueprintDefinition(args.agentClient, args.config, args.blueprint.id);
+  const rawBlueprint = await loadRawBlueprintDefinition(args.wsClient, args.blueprint.id);
   const exportWarnings: string[] = [];
   const exportDefinition = applyLayoutOverridesToBlueprintDefinition(
     rawBlueprint ?? fallbackBlueprintDefinition(args.blueprint),
@@ -966,16 +922,6 @@ async function buildBlueprintExportPackage(args: {
   };
 }
 
-function preferredBackend(agentClient: HomeAssistantAgentClient, wsClient: HomeAssistantClient): StudioBackendMode {
-  if (agentClient.hasKey) {
-    return "agent";
-  }
-  if (wsClient.hasToken) {
-    return "websocket";
-  }
-  return "none";
-}
-
 async function buildSnapshotWithWebsocket(client: HomeAssistantClient): Promise<StudioSnapshot> {
   const [blueprintsResult, configsResult, areaResult, deviceResult, entityResult, statesResult] = await Promise.all([
     client.call<{ blueprints: Record<string, Record<string, unknown>> }>({ type: "switch_manager/blueprints" }),
@@ -996,30 +942,6 @@ async function buildSnapshotWithWebsocket(client: HomeAssistantClient): Promise<
     devicesRaw: deviceResult,
     entityRegistryRaw: entityResult,
     entityStatesRaw: statesResult
-  });
-}
-
-async function buildSnapshotWithAgent(
-  client: HomeAssistantAgentClient,
-  config: StudioConfig
-): Promise<StudioSnapshot> {
-  const [blueprints, store, areaResult, deviceResult, entityRegistry, entityStates] = await Promise.all([
-    loadBlueprintCatalog(client, config),
-    loadStore(client, config),
-    client.listAreas(),
-    client.listDevices(),
-    client.listEntityRegistry(),
-    client.listEntitySummaries()
-  ]);
-
-  return buildSnapshotFromRawData({
-    haBaseUrl: config.haBaseUrl,
-    areasRaw: areaResult,
-    blueprints,
-    configsRaw: Object.entries(store.data?.managed_switches ?? {}).map(([id, raw]) => ({ id, raw })),
-    devicesRaw: deviceResult,
-    entityRegistryRaw: entityRegistry,
-    entityStatesRaw: entityStates.map((entry) => normalizeStateSummary(entry))
   });
 }
 
@@ -1161,34 +1083,14 @@ function buildSnapshotFromRawData(input: {
   };
 }
 
-async function loadStore(client: HomeAssistantAgentClient, config: StudioConfig): Promise<SwitchManagerStoreFile> {
-  const content = await client.readFile(config.switchManagerStorePath);
-  const parsed = JSON.parse(content) as SwitchManagerStoreFile;
-  if (!isRecord(parsed) || !isRecord(parsed.data)) {
-    throw new Error("Switch Manager store file is invalid");
-  }
-  if (!isRecord(parsed.data.managed_switches)) {
-    parsed.data.managed_switches = {};
-  }
-  return parsed;
-}
-
-async function writeStore(
-  client: HomeAssistantAgentClient,
-  config: StudioConfig,
-  store: SwitchManagerStoreFile
-): Promise<void> {
-  await client.writeFile(config.switchManagerStorePath, `${JSON.stringify(store, null, 2)}\n`);
-}
-
 async function loadLearningStore(
-  client: HomeAssistantAgentClient,
-  config: StudioConfig
+  client: HomeAssistantClient
 ): Promise<SwitchManagerLearningStoreFile> {
   try {
-    const content = await client.readFile(config.switchManagerLearningStorePath);
-    const parsed = JSON.parse(content) as SwitchManagerLearningStoreFile;
-    const data = isRecord(parsed.data) ? parsed.data : parsed;
+    const result = await client.call<SwitchManagerLearningStoreFile>({
+      type: "switch_manager/learning"
+    });
+    const data = isRecord(result.data) ? result.data : result;
     return {
       active_session: isRecord(data.active_session) ? data.active_session : null,
       library: Array.isArray(data.library) ? data.library : []
@@ -1383,13 +1285,14 @@ function inferAutomationMatch(
   };
 }
 
-async function loadAutomationsWithAgent(
-  client: HomeAssistantAgentClient,
-  config: StudioConfig,
+async function loadAutomationsWithWebsocket(
+  client: HomeAssistantClient,
   snapshot: StudioSnapshot | null
 ): Promise<AutomationSummary[]> {
-  const parsed = (await client.parseYaml(config.automationsPath)) as unknown;
-  const entries = Array.isArray(parsed) ? parsed : [];
+  const result = await client.call<{ automations?: Array<Record<string, unknown>> }>({
+    type: "switch_manager/automations/list"
+  });
+  const entries = Array.isArray(result.automations) ? result.automations : [];
   return entries
     .filter((entry): entry is Record<string, unknown> => isRecord(entry))
     .map((entry) => normalizeAutomationEntry(entry, snapshot))
@@ -1578,8 +1481,8 @@ function normalizePropertyEntity(state: Record<string, unknown>): PropertyEntity
   };
 }
 
-async function loadDevicePropertiesWithAgent(
-  client: HomeAssistantAgentClient,
+async function loadDevicePropertiesWithWebsocket(
+  client: HomeAssistantClient,
   snapshot: StudioSnapshot,
   deviceId: string
 ): Promise<DevicePropertiesResponse> {
@@ -1592,15 +1495,7 @@ async function loadDevicePropertiesWithAgent(
     };
   }
 
-  const stateResults = await Promise.all(
-    device.entityIds.map(async (entityId) => {
-      const matches = await client.listEntities({
-        pageSize: 10,
-        search: entityId
-      });
-      return matches.find((entry) => asString(entry.entity_id) === entityId) ?? null;
-    })
-  );
+  const stateResults = await client.call<Array<Record<string, unknown>>>({ type: "get_states" });
   const stateMap = new Map(
     stateResults
       .filter((entry): entry is Record<string, unknown> => Boolean(entry))
@@ -1618,8 +1513,8 @@ async function loadDevicePropertiesWithAgent(
   };
 }
 
-async function callEntityControlWithAgent(
-  client: HomeAssistantAgentClient,
+async function callEntityControl(
+  client: HomeAssistantClient,
   entityId: string,
   action: string,
   value?: unknown
@@ -1685,9 +1580,8 @@ function buildExportAutomation(
   };
 }
 
-async function exportAutomationWithAgent(
-  client: HomeAssistantAgentClient,
-  config: StudioConfig,
+async function exportAutomationWithWebsocket(
+  client: HomeAssistantClient,
   snapshot: StudioSnapshot,
   payload: {
     configId: string;
@@ -1726,25 +1620,12 @@ async function exportAutomationWithAgent(
     sequence,
     payload.alias
   );
-  const currentContent = await client.readFile(config.automationsPath);
-  const nextContent = `${currentContent.replace(/\s*$/, "\n")}${stringifyYaml([exported])}`;
-  await client.writeFile(config.automationsPath, `${nextContent.replace(/\s*$/, "\n")}`);
-  await client.callService("automation", "reload");
+  await client.call({
+    type: "switch_manager/automations/export",
+    automation: exported
+  });
 
   return normalizeAutomationEntry(exported, snapshot);
-}
-
-function nextConfigId(store: SwitchManagerStoreFile): string {
-  const managedSwitches = store.data?.managed_switches ?? {};
-  const numericIds = Object.keys(managedSwitches)
-    .map((entry) => Number(entry))
-    .filter((value) => Number.isInteger(value) && value >= 0);
-
-  if (!numericIds.length) {
-    return "0";
-  }
-
-  return String(Math.max(...numericIds) + 1);
 }
 
 function managedAreaIdFromConfig(configEntry: SwitchManagerConfig): string | null | undefined {
@@ -1754,8 +1635,8 @@ function managedAreaIdFromConfig(configEntry: SwitchManagerConfig): string | nul
   return asNullableString(configEntry.metadata.areaId) ?? null;
 }
 
-async function syncConfigAreaWithAgent(
-  client: HomeAssistantAgentClient,
+async function syncConfigAreaWithWebsocket(
+  client: HomeAssistantClient,
   configEntry: SwitchManagerConfig
 ): Promise<void> {
   const areaId = managedAreaIdFromConfig(configEntry);
@@ -1764,7 +1645,11 @@ async function syncConfigAreaWithAgent(
   }
 
   if (configEntry.deviceId) {
-    await client.updateDeviceArea(configEntry.deviceId, areaId);
+    await client.call({
+      type: "config/device_registry/update",
+      device_id: configEntry.deviceId,
+      area_id: areaId
+    });
     return;
   }
 
@@ -1774,154 +1659,29 @@ async function syncConfigAreaWithAgent(
     null;
 
   if (entityId) {
-    await client.updateEntityArea(entityId, areaId);
+    await client.call({
+      type: "config/entity_registry/update",
+      entity_id: entityId,
+      area_id: areaId
+    });
   }
 }
 
-async function saveConfigWithAgent(
-  client: HomeAssistantAgentClient,
-  config: StudioConfig,
+async function saveConfigWithWebsocket(
+  client: HomeAssistantClient,
   draft: SwitchManagerConfig
 ): Promise<SwitchManagerConfig> {
-  const store = await loadStore(client, config);
-  const managedSwitches = store.data?.managed_switches ?? {};
-  const nextId = draft.id?.trim() ? draft.id : nextConfigId(store);
-
-  managedSwitches[nextId] = normalizeStoreConfigForSave({
-    ...draft,
-    id: nextId
+  const result = await client.call<{ config?: Record<string, unknown>; config_id?: string }>({
+    type: "switch_manager/config/save",
+    config: normalizeConfigForSave(draft)
   });
-
-  if (store.data) {
-    store.data.managed_switches = managedSwitches;
-  }
-
-  await writeStore(client, config, store);
-  await syncConfigAreaWithAgent(client, {
-    ...draft,
-    id: nextId
+  const configId = asString(result.config_id, draft.id);
+  const savedConfig = normalizeConfig({
+    id: configId,
+    ...(isRecord(result.config) ? result.config : {})
   });
-  await client.callService("switch_manager", "reload");
-
-  return normalizeConfigFromStore(nextId, managedSwitches[nextId]);
-}
-
-async function setConfigEnabledWithAgent(
-  client: HomeAssistantAgentClient,
-  config: StudioConfig,
-  configId: string,
-  enabled: boolean
-): Promise<{ switch_id: string; enabled: boolean }> {
-  const store = await loadStore(client, config);
-  const managedSwitches = store.data?.managed_switches ?? {};
-  const current = managedSwitches[configId];
-  if (!isRecord(current)) {
-    throw new Error(`Switch Manager config ${configId} was not found`);
-  }
-
-  current.enabled = enabled;
-  await writeStore(client, config, store);
-  await client.callService("switch_manager", "reload");
-
-  return {
-    switch_id: configId,
-    enabled
-  };
-}
-
-async function deleteConfigWithAgent(
-  client: HomeAssistantAgentClient,
-  config: StudioConfig,
-  configId: string
-): Promise<{ deleted: string }> {
-  const store = await loadStore(client, config);
-  const managedSwitches = store.data?.managed_switches ?? {};
-  if (!(configId in managedSwitches)) {
-    throw new Error(`Switch Manager config ${configId} was not found`);
-  }
-
-  delete managedSwitches[configId];
-  await writeStore(client, config, store);
-  await client.callService("switch_manager", "reload");
-
-  return {
-    deleted: configId
-  };
-}
-
-async function loadBlueprintCatalog(
-  client: HomeAssistantAgentClient,
-  config: StudioConfig
-): Promise<SwitchManagerBlueprint[]> {
-  const files = (await client.listFiles(config.switchManagerBlueprintDir, "*"))
-    .map((entry) => ({
-      path: asString(entry.path),
-      name: asString(entry.name),
-      modified: asNumber(entry.modified),
-      isYaml: asBoolean(entry.is_yaml)
-    }))
-    .filter((entry) => isDirectChild(config.switchManagerBlueprintDir, entry.path));
-
-  const yamlFiles = files.filter((entry) => entry.isYaml && entry.name.toLowerCase().endsWith(".yaml"));
-  const imageIds = new Set(
-    files
-      .filter((entry) => !entry.isYaml && extname(entry.name).toLowerCase() === ".png")
-      .map((entry) => basename(entry.name, ".png"))
-  );
-  const signature = yamlFiles
-    .map((entry) => `${entry.path}:${entry.modified}:${imageIds.has(basename(entry.name, ".yaml")) ? 1 : 0}`)
-    .sort()
-    .join("|");
-  const cacheKey = client.baseUrl;
-  const cached = blueprintCatalogCache.get(cacheKey);
-
-  if (cached && cached.signature === signature) {
-    return cached.blueprints;
-  }
-
-  const blueprints = (
-    await Promise.all(
-      yamlFiles.map(async (entry) => {
-        const id = basename(entry.name, ".yaml");
-        const parsed = await client.parseYaml(entry.path);
-        if (!isRecord(parsed)) {
-          return null;
-        }
-        return normalizeBlueprint({
-          id,
-          has_image: imageIds.has(id),
-          ...parsed
-        });
-      })
-    )
-  )
-    .filter((blueprint): blueprint is SwitchManagerBlueprint => Boolean(blueprint))
-    .sort((left, right) => left.name.localeCompare(right.name));
-
-  blueprintCatalogCache.set(cacheKey, {
-    signature,
-    blueprints
-  });
-
-  return blueprints;
-}
-
-function isDirectChild(directory: string, filePath: string): boolean {
-  const normalizedDirectory = directory.replace(/\\/g, "/").replace(/\/+$/, "");
-  const normalizedPath = filePath.replace(/\\/g, "/");
-  if (!normalizedPath.startsWith(`${normalizedDirectory}/`)) {
-    return false;
-  }
-  const relativePath = normalizedPath.slice(normalizedDirectory.length + 1);
-  return Boolean(relativePath) && !relativePath.includes("/");
-}
-
-async function loadHomeAssistantVersionWithAgent(client: HomeAssistantAgentClient): Promise<string | null> {
-  try {
-    return (await client.readFile(".HA_VERSION")).trim() || null;
-  } catch {
-    return null;
-  }
+  await syncConfigAreaWithWebsocket(client, savedConfig);
+  return savedConfig;
 }
 
 async function serveLocalBlueprintImage(
@@ -1943,139 +1703,151 @@ async function serveLocalBlueprintImage(
 
 async function main(): Promise<void> {
   const config = loadConfig();
-  const wsClient = new HomeAssistantClient(config);
-  const agentClient = new HomeAssistantAgentClient(config);
+  const authManager = new StudioAuthManager();
   const app = Fastify({ logger: true });
   const webRoot = resolve(__dirname, "../web");
 
-  app.get("/api/health", async (request, reply) => {
-    const backend = preferredBackend(agentClient, wsClient);
-
-    if (backend === "none") {
-      reply.code(503);
-      return {
-        ok: false,
-        haBaseUrl: config.haBaseUrl,
-        hasToken: false,
-        error: "Neither HA_AGENT_KEY nor HA_TOKEN is configured"
-      };
+  async function withClient<T>(
+    request: FastifyRequest,
+    reply: FastifyReply,
+    task: (client: HomeAssistantClient) => Promise<T>
+  ): Promise<T | { error: string }> {
+    const session = authManager.getSession(request);
+    if (!session) {
+      return authManager.unauthorized(reply);
     }
 
-    if (backend === "agent") {
-      try {
-        const [agentHealth, haVersion] = await Promise.all([
-          agentClient.health(),
-          loadHomeAssistantVersionWithAgent(agentClient)
-        ]);
+    const client = new HomeAssistantClient({
+      haBaseUrl: session.haBaseUrl,
+      haToken: session.accessToken,
+      requestTimeoutMs: config.requestTimeoutMs
+    });
 
+    try {
+      return await task(client);
+    } finally {
+      client.close();
+    }
+  }
+
+  app.get("/api/auth/status", async (request, reply) => {
+    reply.header("Cache-Control", "no-store");
+    return authManager.status(request, config);
+  });
+
+  app.post("/api/auth/session", async (request, reply) => {
+    reply.header("Cache-Control", "no-store");
+    const body = request.body as Partial<AuthSessionRequest> | undefined;
+    if (typeof body?.haBaseUrl !== "string" || !body.haBaseUrl.trim()) {
+      reply.code(400);
+      return { error: "haBaseUrl is required" };
+    }
+    if (typeof body?.accessToken !== "string" || !body.accessToken.trim()) {
+      reply.code(400);
+      return { error: "accessToken is required" };
+    }
+
+    const client = new HomeAssistantClient({
+      haBaseUrl: body.haBaseUrl.trim().replace(/\/+$/, ""),
+      haToken: body.accessToken.trim(),
+      requestTimeoutMs: config.requestTimeoutMs
+    });
+
+    try {
+      await client.call({ type: "get_config" });
+      const session = authManager.createSession(reply, {
+        haBaseUrl: client.baseUrl,
+        accessToken: body.accessToken
+      });
+      return {
+        authenticated: true,
+        haBaseUrl: session.haBaseUrl,
+        defaultHaBaseUrl: config.defaultHaBaseUrl
+      };
+    } catch (error) {
+      request.log.error(error);
+      reply.code(401);
+      return { error: error instanceof Error ? error.message : String(error) };
+    } finally {
+      client.close();
+    }
+  });
+
+  app.delete("/api/auth/session", async (request, reply) => {
+    reply.header("Cache-Control", "no-store");
+    authManager.clearSession(request, reply);
+    return authManager.status(request, config);
+  });
+
+  app.get("/api/health", async (request, reply) =>
+    withClient(request, reply, async (client) => {
+      try {
+        const result = await client.call<{ version: string }>({ type: "get_config" });
         return {
           ok: true,
-          haBaseUrl: config.haBaseUrl,
+          haBaseUrl: client.baseUrl,
           hasToken: true,
-          version: haVersion ?? `Agent ${agentHealth.version ?? "connected"}`
+          version: result.version
         };
       } catch (error) {
         request.log.error(error);
         reply.code(503);
         return {
           ok: false,
-          haBaseUrl: config.haBaseUrl,
+          haBaseUrl: client.baseUrl,
           hasToken: true,
           error: error instanceof Error ? error.message : String(error)
         };
       }
-    }
+    })
+  );
 
-    try {
-      const result = await wsClient.call<{ version: string }>({ type: "get_config" });
-      return {
-        ok: true,
-        haBaseUrl: wsClient.baseUrl,
-        hasToken: true,
-        version: result.version
-      };
-    } catch (error) {
-      request.log.error(error);
-      reply.code(503);
-      return {
-        ok: false,
-        haBaseUrl: wsClient.baseUrl,
-        hasToken: true,
-        error: error instanceof Error ? error.message : String(error)
-      };
-    }
-  });
-
-  app.get("/api/snapshot", async (request, reply) => {
-    const backend = preferredBackend(agentClient, wsClient);
-
-    try {
-      if (backend === "agent") {
-        return await buildSnapshotWithAgent(agentClient, config);
+  app.get("/api/snapshot", async (request, reply) =>
+    withClient(request, reply, async (client) => {
+      try {
+        return await buildSnapshotWithWebsocket(client);
+      } catch (error) {
+        request.log.error(error);
+        reply.code(503);
+        return {
+          error: error instanceof Error ? error.message : String(error)
+        };
       }
-      if (backend === "websocket") {
-        return await buildSnapshotWithWebsocket(wsClient);
+    })
+  );
+
+  app.get("/api/discovery", async (request, reply) =>
+    withClient(request, reply, async (client) => {
+      try {
+        const snapshot = await buildSnapshotWithWebsocket(client);
+        const automations = await loadAutomationsWithWebsocket(client, snapshot).catch(() => []);
+        return {
+          candidates: buildDiscoveryCandidates(snapshot, automations)
+        };
+      } catch (error) {
+        request.log.error(error);
+        reply.code(400);
+        return { error: error instanceof Error ? error.message : String(error) };
       }
+    })
+  );
 
-      reply.code(503);
-      return {
-        error: "Neither HA_AGENT_KEY nor HA_TOKEN is configured"
-      };
-    } catch (error) {
-      request.log.error(error);
-      reply.code(503);
-      return {
-        error: error instanceof Error ? error.message : String(error)
-      };
-    }
-  });
-
-  app.get("/api/discovery", async (request, reply) => {
-    const backend = preferredBackend(agentClient, wsClient);
-    if (backend !== "agent") {
-      reply.code(501);
-      return { error: "Switch discovery requires HA agent mode" };
-    }
-
-    try {
-      const snapshot = await buildSnapshotWithAgent(agentClient, config);
-      const automations = await loadAutomationsWithAgent(agentClient, config, snapshot);
-      return {
-        candidates: buildDiscoveryCandidates(snapshot, automations)
-      };
-    } catch (error) {
-      request.log.error(error);
-      reply.code(400);
-      return { error: error instanceof Error ? error.message : String(error) };
-    }
-  });
-
-  app.get("/api/automations", async (request, reply) => {
-    const backend = preferredBackend(agentClient, wsClient);
-    if (backend !== "agent") {
-      reply.code(501);
-      return { error: "Automation import/export requires HA agent mode" };
-    }
-
-    try {
-      const snapshot = await buildSnapshotWithAgent(agentClient, config);
-      return {
-        automations: await loadAutomationsWithAgent(agentClient, config, snapshot)
-      };
-    } catch (error) {
-      request.log.error(error);
-      reply.code(400);
-      return { error: error instanceof Error ? error.message : String(error) };
-    }
-  });
+  app.get("/api/automations", async (request, reply) =>
+    withClient(request, reply, async (client) => {
+      try {
+        const snapshot = await buildSnapshotWithWebsocket(client);
+        return {
+          automations: await loadAutomationsWithWebsocket(client, snapshot)
+        };
+      } catch (error) {
+        request.log.error(error);
+        reply.code(400);
+        return { error: error instanceof Error ? error.message : String(error) };
+      }
+    })
+  );
 
   app.post("/api/automations/export", async (request, reply) => {
-    const backend = preferredBackend(agentClient, wsClient);
-    if (backend !== "agent") {
-      reply.code(501);
-      return { error: "Automation export requires HA agent mode" };
-    }
-
     const body = request.body as {
       configId?: string;
       buttonIndex?: number;
@@ -2092,36 +1864,40 @@ async function main(): Promise<void> {
       reply.code(400);
       return { error: "configId, buttonIndex, and actionIndex are required" };
     }
+    const payload = {
+      configId: body.configId,
+      buttonIndex: body.buttonIndex,
+      actionIndex: body.actionIndex,
+      pressCount: body.pressCount,
+      virtual: body.virtual,
+      alias: body.alias
+    };
 
-    try {
-      const snapshot = await buildSnapshotWithAgent(agentClient, config);
-      return {
-        automation: await exportAutomationWithAgent(agentClient, config, snapshot, {
-          configId: body.configId,
-          buttonIndex: body.buttonIndex,
-          actionIndex: body.actionIndex,
-          pressCount: body.pressCount,
-          virtual: body.virtual,
-          alias: body.alias
-        })
-      };
-    } catch (error) {
-      request.log.error(error);
-      reply.code(400);
-      return { error: error instanceof Error ? error.message : String(error) };
-    }
+    return withClient(request, reply, async (client) => {
+      try {
+        const snapshot = await buildSnapshotWithWebsocket(client);
+        return {
+          automation: await exportAutomationWithWebsocket(client, snapshot, payload)
+        };
+      } catch (error) {
+        request.log.error(error);
+        reply.code(400);
+        return { error: error instanceof Error ? error.message : String(error) };
+      }
+    });
   });
 
   app.get("/api/blueprints/:id/image-status", async (request, reply) => {
     const params = request.params as { id: string };
-
-    try {
-      return await loadBlueprintImageStatus(params.id, config, wsClient);
-    } catch (error) {
-      request.log.error(error);
-      reply.code(400);
-      return { error: error instanceof Error ? error.message : String(error) };
-    }
+    return withClient(request, reply, async (client) => {
+      try {
+        return await loadBlueprintImageStatus(params.id, config, client);
+      } catch (error) {
+        request.log.error(error);
+        reply.code(400);
+        return { error: error instanceof Error ? error.message : String(error) };
+      }
+    });
   });
 
   app.post("/api/blueprints/:id/image-override", async (request, reply) => {
@@ -2131,49 +1907,49 @@ async function main(): Promise<void> {
       reply.code(400);
       return { error: "imageBase64 is required" };
     }
+    const imageBase64 = body.imageBase64;
+    const sourceFileName = typeof body.sourceFileName === "string" ? body.sourceFileName : null;
 
-    try {
-      const buffer = Buffer.from(body.imageBase64, "base64");
-      if (!buffer.length) {
-        throw new Error("Uploaded image content was empty");
-      }
-      if (!isPngBuffer(buffer)) {
-        throw new Error("Uploaded image must be converted to PNG before it reaches the server");
-      }
+    return withClient(request, reply, async (client) => {
+      try {
+        const buffer = Buffer.from(imageBase64, "base64");
+        if (!buffer.length) {
+          throw new Error("Uploaded image content was empty");
+        }
+        if (!isPngBuffer(buffer)) {
+          throw new Error("Uploaded image must be converted to PNG before it reaches the server");
+        }
 
-      await saveBlueprintImageOverride(config.blueprintImageOverrideDir, params.id, buffer);
-      const status = await loadBlueprintImageStatus(params.id, config, wsClient);
-      return {
-        ...status,
-        sourceFileName: typeof body.sourceFileName === "string" ? body.sourceFileName : null
-      };
-    } catch (error) {
-      request.log.error(error);
-      reply.code(400);
-      return { error: error instanceof Error ? error.message : String(error) };
-    }
+        await saveBlueprintImageOverride(config.blueprintImageOverrideDir, params.id, buffer);
+        const status = await loadBlueprintImageStatus(params.id, config, client);
+        return {
+          ...status,
+          sourceFileName
+        };
+      } catch (error) {
+        request.log.error(error);
+        reply.code(400);
+        return { error: error instanceof Error ? error.message : String(error) };
+      }
+    });
   });
 
   app.delete("/api/blueprints/:id/image-override", async (request, reply) => {
     const params = request.params as { id: string };
 
-    try {
-      await removeBlueprintImageOverride(config.blueprintImageOverrideDir, params.id);
-      return await loadBlueprintImageStatus(params.id, config, wsClient);
-    } catch (error) {
-      request.log.error(error);
-      reply.code(400);
-      return { error: error instanceof Error ? error.message : String(error) };
-    }
+    return withClient(request, reply, async (client) => {
+      try {
+        await removeBlueprintImageOverride(config.blueprintImageOverrideDir, params.id);
+        return await loadBlueprintImageStatus(params.id, config, client);
+      } catch (error) {
+        request.log.error(error);
+        reply.code(400);
+        return { error: error instanceof Error ? error.message : String(error) };
+      }
+    });
   });
 
   app.post("/api/blueprints/export-package", async (request, reply) => {
-    const backend = preferredBackend(agentClient, wsClient);
-    if (backend === "none") {
-      reply.code(503);
-      return { error: "Blueprint export requires HA agent or HA token access" };
-    }
-
     const body = request.body as SaveConfigRequest | undefined;
     const draft = body?.config;
     if (!draft || typeof draft.blueprintId !== "string" || !draft.blueprintId.trim()) {
@@ -2181,67 +1957,55 @@ async function main(): Promise<void> {
       return { error: "config.blueprintId is required" };
     }
 
-    try {
-      const snapshot =
-        backend === "agent"
-          ? await buildSnapshotWithAgent(agentClient, config)
-          : await buildSnapshotWithWebsocket(wsClient);
-      const blueprint = snapshot.blueprints.find((entry) => entry.id === draft.blueprintId);
-      if (!blueprint) {
-        throw new Error(`Blueprint ${draft.blueprintId} was not found`);
+    return withClient(request, reply, async (client) => {
+      try {
+        const snapshot = await buildSnapshotWithWebsocket(client);
+        const blueprint = snapshot.blueprints.find((entry) => entry.id === draft.blueprintId);
+        if (!blueprint) {
+          throw new Error(`Blueprint ${draft.blueprintId} was not found`);
+        }
+
+        const packageResult = await buildBlueprintExportPackage({
+          wsClient: client,
+          config,
+          draft,
+          blueprint
+        });
+
+        reply.header("Cache-Control", "no-store");
+        reply.header("Content-Disposition", `attachment; filename=\"${packageResult.fileName}\"`);
+        reply.header("Content-Length", String(packageResult.content.length));
+        reply.header("Content-Type", "application/gzip");
+        return packageResult.content;
+      } catch (error) {
+        request.log.error(error);
+        reply.code(400);
+        return { error: error instanceof Error ? error.message : String(error) };
       }
-
-      const packageResult = await buildBlueprintExportPackage({
-        agentClient,
-        wsClient,
-        config,
-        draft,
-        blueprint
-      });
-
-      reply.header("Cache-Control", "no-store");
-      reply.header("Content-Disposition", `attachment; filename=\"${packageResult.fileName}\"`);
-      reply.header("Content-Length", String(packageResult.content.length));
-      reply.header("Content-Type", "application/gzip");
-      return packageResult.content;
-    } catch (error) {
-      request.log.error(error);
-      reply.code(400);
-      return { error: error instanceof Error ? error.message : String(error) };
-    }
+    });
   });
 
-  app.get("/api/learning", async (request, reply) => {
-    const backend = preferredBackend(agentClient, wsClient);
-    if (backend !== "agent") {
-      reply.code(501);
-      return { error: "Learn mode requires HA agent mode" };
-    }
-
-    try {
-      const store = await loadLearningStore(agentClient, config);
-      const response: LearningLibraryResponse = {
-        activeSession: normalizeLearningSession(store.active_session),
-        events: (store.library ?? [])
-          .filter((entry): entry is Record<string, unknown> => isRecord(entry))
-          .map((entry) => normalizeLearnedEvent(entry))
-          .sort((left, right) => right.capturedAt.localeCompare(left.capturedAt))
-      };
-      return response;
-    } catch (error) {
-      request.log.error(error);
-      reply.code(400);
-      return { error: error instanceof Error ? error.message : String(error) };
-    }
-  });
+  app.get("/api/learning", async (request, reply) =>
+    withClient(request, reply, async (client) => {
+      try {
+        const store = await loadLearningStore(client);
+        const response: LearningLibraryResponse = {
+          activeSession: normalizeLearningSession(store.active_session),
+          events: (store.library ?? [])
+            .filter((entry): entry is Record<string, unknown> => isRecord(entry))
+            .map((entry) => normalizeLearnedEvent(entry))
+            .sort((left, right) => right.capturedAt.localeCompare(left.capturedAt))
+        };
+        return response;
+      } catch (error) {
+        request.log.error(error);
+        reply.code(400);
+        return { error: error instanceof Error ? error.message : String(error) };
+      }
+    })
+  );
 
   app.post("/api/learning/start", async (request, reply) => {
-    const backend = preferredBackend(agentClient, wsClient);
-    if (backend !== "agent") {
-      reply.code(501);
-      return { error: "Learn mode requires HA agent mode" };
-    }
-
     const body = request.body as {
       blueprintId?: string;
       configId?: string;
@@ -2249,97 +2013,85 @@ async function main(): Promise<void> {
       label?: string;
     };
 
-    try {
-      await agentClient.callService("switch_manager", "start_learning", {
-        ...(body.blueprintId ? { blueprint_id: body.blueprintId } : {}),
-        ...(body.configId ? { config_id: body.configId } : {}),
-        ...(body.identifier ? { identifier: body.identifier } : {}),
-        ...(body.label ? { label: body.label } : {})
-      });
-      const store = await loadLearningStore(agentClient, config);
-      return {
-        activeSession: normalizeLearningSession(store.active_session)
-      };
-    } catch (error) {
-      request.log.error(error);
-      reply.code(400);
-      return { error: error instanceof Error ? error.message : String(error) };
-    }
+    return withClient(request, reply, async (client) => {
+      try {
+        await client.callService("switch_manager", "start_learning", {
+          ...(body.blueprintId ? { blueprint_id: body.blueprintId } : {}),
+          ...(body.configId ? { config_id: body.configId } : {}),
+          ...(body.identifier ? { identifier: body.identifier } : {}),
+          ...(body.label ? { label: body.label } : {})
+        });
+        const store = await loadLearningStore(client);
+        return {
+          activeSession: normalizeLearningSession(store.active_session)
+        };
+      } catch (error) {
+        request.log.error(error);
+        reply.code(400);
+        return { error: error instanceof Error ? error.message : String(error) };
+      }
+    });
   });
 
-  app.post("/api/learning/stop", async (request, reply) => {
-    const backend = preferredBackend(agentClient, wsClient);
-    if (backend !== "agent") {
-      reply.code(501);
-      return { error: "Learn mode requires HA agent mode" };
-    }
+  app.post("/api/learning/stop", async (request, reply) =>
+    withClient(request, reply, async (client) => {
+      try {
+        await client.callService("switch_manager", "stop_learning");
+        return { ok: true };
+      } catch (error) {
+        request.log.error(error);
+        reply.code(400);
+        return { error: error instanceof Error ? error.message : String(error) };
+      }
+    })
+  );
 
-    try {
-      await agentClient.callService("switch_manager", "stop_learning");
-      return { ok: true };
-    } catch (error) {
-      request.log.error(error);
-      reply.code(400);
-      return { error: error instanceof Error ? error.message : String(error) };
-    }
-  });
-
-  app.post("/api/learning/clear", async (request, reply) => {
-    const backend = preferredBackend(agentClient, wsClient);
-    if (backend !== "agent") {
-      reply.code(501);
-      return { error: "Learn mode requires HA agent mode" };
-    }
-
-    try {
-      await agentClient.callService("switch_manager", "clear_learning_library");
-      return { ok: true };
-    } catch (error) {
-      request.log.error(error);
-      reply.code(400);
-      return { error: error instanceof Error ? error.message : String(error) };
-    }
-  });
+  app.post("/api/learning/clear", async (request, reply) =>
+    withClient(request, reply, async (client) => {
+      try {
+        await client.callService("switch_manager", "clear_learning_library");
+        return { ok: true };
+      } catch (error) {
+        request.log.error(error);
+        reply.code(400);
+        return { error: error instanceof Error ? error.message : String(error) };
+      }
+    })
+  );
 
   app.get("/api/devices/:id/properties", async (request, reply) => {
-    const backend = preferredBackend(agentClient, wsClient);
-    if (backend !== "agent") {
-      reply.code(501);
-      return { error: "Property inspection requires HA agent mode" };
-    }
-
-    try {
-      const params = request.params as { id: string };
-      const snapshot = await buildSnapshotWithAgent(agentClient, config);
-      return await loadDevicePropertiesWithAgent(agentClient, snapshot, params.id);
-    } catch (error) {
-      request.log.error(error);
-      reply.code(400);
-      return { error: error instanceof Error ? error.message : String(error) };
-    }
+    const params = request.params as { id: string };
+    return withClient(request, reply, async (client) => {
+      try {
+        const snapshot = await buildSnapshotWithWebsocket(client);
+        return await loadDevicePropertiesWithWebsocket(client, snapshot, params.id);
+      } catch (error) {
+        request.log.error(error);
+        reply.code(400);
+        return { error: error instanceof Error ? error.message : String(error) };
+      }
+    });
   });
 
   app.post("/api/entities/control", async (request, reply) => {
-    const backend = preferredBackend(agentClient, wsClient);
-    if (backend !== "agent") {
-      reply.code(501);
-      return { error: "Property editing requires HA agent mode" };
-    }
-
     const body = request.body as { entityId?: string; action?: string; value?: unknown };
     if (typeof body?.entityId !== "string" || typeof body?.action !== "string") {
       reply.code(400);
       return { error: "entityId and action are required" };
     }
+    const entityId = body.entityId;
+    const action = body.action;
 
-    try {
-      await callEntityControlWithAgent(agentClient, body.entityId, body.action, body.value);
-      return { ok: true };
-    } catch (error) {
-      request.log.error(error);
-      reply.code(400);
-      return { error: error instanceof Error ? error.message : String(error) };
-    }
+    return withClient(request, reply, async (client) => {
+      try {
+        await callEntityControl(client, entityId, action, body.value);
+        return { ok: true };
+      } catch (error) {
+        request.log.error(error);
+        reply.code(400);
+        return { error: error instanceof Error ? error.message : String(error) };
+      }
+    });
   });
 
   app.post("/api/configs/save", async (request, reply) => {
@@ -2349,38 +2101,21 @@ async function main(): Promise<void> {
       return { error: "Invalid config payload" };
     }
 
-    const draft = body.config as SwitchManagerConfig;
-    const backend = preferredBackend(agentClient, wsClient);
-
-    try {
-      if (backend === "agent") {
-        const savedConfig = await saveConfigWithAgent(agentClient, config, draft);
+    return withClient(request, reply, async (client) => {
+      try {
+        const savedConfig = await saveConfigWithWebsocket(client, body.config as SwitchManagerConfig);
         return {
           ok: true,
           config: savedConfig
         };
-      }
-
-      if (backend === "websocket") {
-        const result = await wsClient.call<{ config: Record<string, unknown> }>({
-          type: "switch_manager/config/save",
-          config: normalizeConfigForSave(draft)
-        });
+      } catch (error) {
+        request.log.error(error);
+        reply.code(400);
         return {
-          ok: true,
-          config: normalizeConfig(isRecord(result.config) ? result.config : {})
+          error: error instanceof Error ? error.message : String(error)
         };
       }
-
-      reply.code(503);
-      return { error: "Neither HA_AGENT_KEY nor HA_TOKEN is configured" };
-    } catch (error) {
-      request.log.error(error);
-      reply.code(400);
-      return {
-        error: error instanceof Error ? error.message : String(error)
-      };
-    }
+    });
   });
 
   app.put("/api/configs/:id/enabled", async (request, reply) => {
@@ -2391,55 +2126,39 @@ async function main(): Promise<void> {
       return { error: "enabled must be a boolean" };
     }
 
-    const backend = preferredBackend(agentClient, wsClient);
-
-    try {
-      if (backend === "agent") {
-        return await setConfigEnabledWithAgent(agentClient, config, params.id, body.enabled);
-      }
-      if (backend === "websocket") {
-        return await wsClient.call({
+    return withClient(request, reply, async (client) => {
+      try {
+        return await client.call({
           type: "switch_manager/config/enabled",
           config_id: params.id,
           enabled: body.enabled
         });
+      } catch (error) {
+        request.log.error(error);
+        reply.code(400);
+        return {
+          error: error instanceof Error ? error.message : String(error)
+        };
       }
-
-      reply.code(503);
-      return { error: "Neither HA_AGENT_KEY nor HA_TOKEN is configured" };
-    } catch (error) {
-      request.log.error(error);
-      reply.code(400);
-      return {
-        error: error instanceof Error ? error.message : String(error)
-      };
-    }
+    });
   });
 
   app.delete("/api/configs/:id", async (request, reply) => {
     const params = request.params as { id: string };
-    const backend = preferredBackend(agentClient, wsClient);
-
-    try {
-      if (backend === "agent") {
-        return await deleteConfigWithAgent(agentClient, config, params.id);
-      }
-      if (backend === "websocket") {
-        return await wsClient.call({
+    return withClient(request, reply, async (client) => {
+      try {
+        return await client.call({
           type: "switch_manager/config/delete",
           config_id: params.id
         });
+      } catch (error) {
+        request.log.error(error);
+        reply.code(400);
+        return {
+          error: error instanceof Error ? error.message : String(error)
+        };
       }
-
-      reply.code(503);
-      return { error: "Neither HA_AGENT_KEY nor HA_TOKEN is configured" };
-    } catch (error) {
-      request.log.error(error);
-      reply.code(400);
-      return {
-        error: error instanceof Error ? error.message : String(error)
-      };
-    }
+    });
   });
 
   app.get("/api/blueprints/:id/image", async (request, reply) => {
@@ -2458,17 +2177,17 @@ async function main(): Promise<void> {
       return localImage;
     }
 
-    if (wsClient.hasToken) {
-      const response = await wsClient.fetch(`/assets/switch_manager/${encodeURIComponent(params.id)}.png`);
+    return withClient(request, reply, async (client) => {
+      const response = await client.fetch(`/assets/switch_manager/${encodeURIComponent(params.id)}.png`);
       if (response.ok) {
         reply.header("Content-Type", response.headers.get("content-type") ?? "image/png");
         reply.header("Cache-Control", "no-store");
         return Buffer.from(await response.arrayBuffer());
       }
-    }
 
-    reply.code(404);
-    return { error: `Blueprint image not available for ${params.id}` };
+      reply.code(404);
+      return { error: `Blueprint image not available for ${params.id}` };
+    });
   });
 
   if (await fileExists(webRoot)) {
