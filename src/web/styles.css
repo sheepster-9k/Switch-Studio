@@ -635,37 +635,25 @@ textarea {
 }
 
 .step-builder__toolbar {
-  align-items: center;
+  align-items: flex-start;
   display: flex;
+  flex-wrap: wrap;
   gap: 0.8rem;
   justify-content: space-between;
+}
+
+.step-builder__toolbar-actions,
+.automation-sheet__meta {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  justify-content: flex-end;
 }
 
 .step-builder__toolbar h4,
 .branch-editor h4 {
   margin: 0.2rem 0 0;
-}
-
-.step-add-menu {
-  min-width: min(100%, 16rem);
-}
-
-.step-add-menu[open] summary {
-  margin-bottom: 0.75rem;
-}
-
-.step-add-menu summary {
-  list-style: none;
-}
-
-.step-add-menu summary::-webkit-details-marker {
-  display: none;
-}
-
-.step-add-menu__grid {
-  display: grid;
-  gap: 0.65rem;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
 }
 
 .step-add-option {
@@ -713,10 +701,17 @@ textarea {
   color: var(--muted);
   cursor: grab;
   display: inline-flex;
-  font-size: 1rem;
+  font-size: 0;
   justify-content: center;
   padding: 0 0.8rem;
+  position: relative;
   transition: border-color 140ms ease, background 140ms ease;
+}
+
+.drag-handle::before {
+  content: "::";
+  font-size: 0.95rem;
+  letter-spacing: 0.16em;
 }
 
 .drag-handle:hover {
@@ -733,6 +728,19 @@ textarea {
   display: flex;
   flex-direction: column;
   gap: 0.45rem;
+  min-height: 5rem;
+}
+
+.sequence-card--builder > span:first-child {
+  color: var(--muted);
+  font-size: 0.78rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.sequence-card--builder strong {
+  font-size: 1rem;
+  line-height: 1.4;
 }
 
 .sequence-card__meta {
@@ -866,6 +874,88 @@ textarea {
   padding: 0.8rem;
 }
 
+.automation-drawer,
+.automation-dialog {
+  inset: 0;
+  position: fixed;
+}
+
+.automation-drawer {
+  display: flex;
+  justify-content: flex-end;
+  z-index: 52;
+}
+
+.automation-dialog {
+  display: grid;
+  padding: 1rem;
+  place-items: center;
+  z-index: 62;
+}
+
+.automation-drawer__backdrop,
+.automation-dialog__backdrop {
+  appearance: none;
+  background: rgba(4, 7, 7, 0.72);
+  border: 0;
+  cursor: pointer;
+  inset: 0;
+  position: absolute;
+  width: 100%;
+}
+
+.automation-drawer__panel,
+.automation-dialog__panel {
+  backdrop-filter: blur(18px);
+  background: rgba(17, 23, 22, 0.96);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow);
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  overflow: auto;
+  position: relative;
+  z-index: 1;
+}
+
+.automation-drawer__panel {
+  border-radius: 28px 0 0 28px;
+  border-right: 0;
+  height: 100%;
+  max-width: 42rem;
+  padding: 1.25rem;
+  width: min(100%, 42rem);
+}
+
+.automation-dialog__panel {
+  border-radius: 28px;
+  max-height: min(90vh, 64rem);
+  max-width: min(56rem, calc(100vw - 2rem));
+  padding: 1.25rem;
+  width: min(56rem, calc(100vw - 2rem));
+}
+
+.automation-sheet__header {
+  align-items: flex-start;
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+}
+
+.automation-sheet__copy,
+.step-editor__head .panel-copy {
+  margin: 0.35rem 0 0;
+}
+
+.picker-dialog__grid {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  max-height: 48vh;
+  overflow: auto;
+  padding-right: 0.2rem;
+}
+
 .property-drawer {
   background: rgba(6, 9, 8, 0.52);
   inset: 0;
@@ -907,6 +997,7 @@ textarea {
 
   .hero-panel,
   .panel-head,
+  .automation-sheet__header,
   .workspace-switcher__header,
   .step-editor__head,
   .mode-row,
@@ -918,6 +1009,26 @@ textarea {
   .blueprint-canvas-frame {
     height: clamp(16rem, 42vh, 24rem);
     width: 100%;
+  }
+
+  .automation-dialog {
+    padding: 0.5rem;
+  }
+
+  .automation-drawer {
+    padding-top: 0.5rem;
+  }
+
+  .automation-drawer__panel,
+  .automation-dialog__panel {
+    border-radius: 24px;
+    max-height: calc(100vh - 1rem);
+    width: calc(100vw - 1rem);
+  }
+
+  .automation-drawer__panel {
+    border-right: 1px solid var(--line);
+    height: calc(100vh - 0.5rem);
   }
 }
 

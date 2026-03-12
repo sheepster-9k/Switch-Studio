@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useDeferredValue, useEffect, useMemo, useState, type ReactNode } from "react";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 
 import type {
@@ -88,6 +88,7 @@ interface SequenceEditorProps {
 }
 
 interface SequenceListEditorProps {
+  addLabel?: string;
   depth?: number;
   devicesById: Map<string, DeviceSummary>;
   emptyText: string;
@@ -192,6 +193,130 @@ const ZERO_DURATION: DurationParts = {
   seconds: 0
 };
 
+function EditorOverlay(props: {
+  children: ReactNode;
+  eyebrow: string;
+  mode: "dialog" | "drawer";
+  onClose: () => void;
+  open: boolean;
+  subtitle?: string;
+  title: string;
+}) {
+  const { children, eyebrow, mode, onClose, open, subtitle, title } = props;
+
+  useEffect(() => {
+    if (!open) {
+      return undefined;
+    }
+    function handleKeyDown(event: KeyboardEvent): void {
+      if (event.key === "Escape") {
+        onClose();
+      }
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [onClose, open]);
+
+  if (!open) {
+    return null;
+  }
+
+  const rootClass = mode === "drawer" ? "automation-drawer" : "automation-dialog";
+
+  return (
+    <div aria-modal="true" className={rootClass} role="dialog">
+      <button
+        aria-label="Close editor"
+        className={`${rootClass}__backdrop`}
+        onClick={onClose}
+        type="button"
+      />
+      <section
+        className={`${rootClass}__panel`}
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="automation-sheet__header">
+          <div>
+            <p className="eyebrow">{eyebrow}</p>
+            <h3>{title}</h3>
+            {subtitle ? <p className="panel-copy automation-sheet__copy">{subtitle}</p> : null}
+          </div>
+          <button className="button button--ghost" onClick={onClose} type="button">
+            Close
+          </button>
+        </div>
+        {children}
+      </section>
+    </div>
+  );
+}
+
+function PickerDialog(props: {
+  description: string;
+  emptyText: string;
+  eyebrow: string;
+  onClose: () => void;
+  onPick: (id: string) => void;
+  open: boolean;
+  options: TargetOption[];
+  title: string;
+}) {
+  const { description, emptyText, eyebrow, onClose, onPick, open, options, title } = props;
+  const [search, setSearch] = useState("");
+  const deferredSearch = useDeferredValue(search.trim());
+
+  useEffect(() => {
+    if (!open && search) {
+      setSearch("");
+    }
+  }, [open, search]);
+
+  const filteredOptions = useMemo(
+    () => options.filter((option) => matchesSearch(`${option.label} ${option.detail}`, deferredSearch)),
+    [deferredSearch, options]
+  );
+
+  return (
+    <EditorOverlay
+      eyebrow={eyebrow}
+      mode="dialog"
+      onClose={onClose}
+      open={open}
+      subtitle={description}
+      title={title}
+    >
+      <label className="field">
+        <span>Search</span>
+        <input
+          onChange={(event) => setSearch(event.target.value)}
+          placeholder="Find a building block"
+          type="search"
+          value={search}
+        />
+      </label>
+
+      <div className="automation-sheet__meta">
+        <span className="pill pill--muted">{filteredOptions.length} options</span>
+      </div>
+
+      <div className="picker-dialog__grid">
+        {filteredOptions.length === 0 ? <div className="empty-state">{emptyText}</div> : null}
+        {filteredOptions.map((option) => (
+          <button
+            className="step-add-option"
+            key={option.id}
+            onClick={() => onPick(option.id)}
+            type="button"
+          >
+            <strong>{option.label}</strong>
+            <span>{option.detail}</span>
+          </button>
+        ))}
+      </div>
+    </EditorOverlay>
+  );
+}
+
 export function SequenceEditor(props: SequenceEditorProps) {
   const {
     devicesById,
@@ -255,6 +380,7 @@ export function SequenceEditor(props: SequenceEditorProps) {
           </div>
 
           <SequenceListEditor
+            addLabel="Add action"
             devicesById={devicesById}
             emptyText="No steps mapped yet. Add a step to start building this action."
             entitiesById={entitiesById}
@@ -276,6 +402,7 @@ export function SequenceEditor(props: SequenceEditorProps) {
 
 function SequenceListEditor(props: SequenceListEditorProps) {
   const {
+    addLabel = "Add step",
     depth = 0,
     devicesById,
     emptyText,
@@ -292,12 +419,15 @@ function SequenceListEditor(props: SequenceListEditorProps) {
   const [internalSelectedIndex, setInternalSelectedIndex] = useState(0);
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [dropIndex, setDropIndex] = useState<number | null>(null);
+  const [editorOpen, setEditorOpen] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
   const controlled = typeof selectedIndex === "number" && typeof onSelectIndex === "function";
   const activeIndex = controlled ? selectedIndex : internalSelectedIndex;
   const selectedStep = sequence[activeIndex] ?? null;
 
   useEffect(() => {
     if (sequence.length === 0) {
+      setEditorOpen(false);
       if (controlled) {
         onSelectIndex?.(0);
       } else {
@@ -318,9 +448,10 @@ function SequenceListEditor(props: SequenceListEditorProps) {
   function selectIndex(index: number): void {
     if (controlled) {
       onSelectIndex?.(index);
-      return;
+    } else {
+      setInternalSelectedIndex(index);
     }
-    setInternalSelectedIndex(index);
+    setEditorOpen(true);
   }
 
   function commit(nextSequence: SequenceStep[], nextSelectedIndex?: number): void {
@@ -337,6 +468,8 @@ function SequenceListEditor(props: SequenceListEditorProps) {
   function addStep(kind: StepTemplateKind): void {
     const nextSequence = [...sequence.map((step) => cloneStep(step)), createStepTemplate(kind)];
     commit(nextSequence, nextSequence.length - 1);
+    setPickerOpen(false);
+    setEditorOpen(true);
   }
 
   function replaceStep(index: number, nextStep: SequenceStep): void {
@@ -354,6 +487,7 @@ function SequenceListEditor(props: SequenceListEditorProps) {
     const duplicate = cloneStep(sequence[index] ?? {});
     nextSequence.splice(index + 1, 0, duplicate);
     commit(nextSequence, index + 1);
+    setEditorOpen(true);
   }
 
   function moveStep(index: number, delta: number): void {
@@ -384,22 +518,12 @@ function SequenceListEditor(props: SequenceListEditorProps) {
           <p className="eyebrow">{label}</p>
           <h4>{sequence.length} step{sequence.length === 1 ? "" : "s"}</h4>
         </div>
-        <details className="step-add-menu">
-          <summary className="button" role="button">Add step</summary>
-          <div className="step-add-menu__grid">
-            {STEP_TEMPLATE_OPTIONS.map((option) => (
-              <button
-                className="step-add-option"
-                key={option.kind}
-                onClick={() => addStep(option.kind)}
-                type="button"
-              >
-                <strong>{option.label}</strong>
-                <span>{option.detail}</span>
-              </button>
-            ))}
-          </div>
-        </details>
+        <div className="step-builder__toolbar-actions">
+          {sequence.length > 0 ? <span className="pill pill--muted">Cards stay collapsed until you edit one</span> : null}
+          <button className="button" onClick={() => setPickerOpen(true)} type="button">
+            {addLabel}
+          </button>
+        </div>
       </div>
 
       <div className={`sequence-list sequence-list--builder ${depth > 0 ? "sequence-list--nested" : ""}`}>
@@ -463,28 +587,57 @@ function SequenceListEditor(props: SequenceListEditorProps) {
         })}
       </div>
 
-      {selectedStep ? (
-        <StepInspector
-          depth={depth}
-          devicesById={devicesById}
-          entitiesById={entitiesById}
-          onChange={(nextStep) => {
-            if (depth === 0 && onReplaceSelectedStep) {
-              onReplaceSelectedStep(nextStep);
-              return;
-            }
-            replaceStep(activeIndex, nextStep);
-          }}
-          onDuplicate={() => duplicateStep(activeIndex)}
-          onMoveDown={() => moveStep(activeIndex, 1)}
-          onMoveUp={() => moveStep(activeIndex, -1)}
-          onRemove={() => removeStep(activeIndex)}
-          snapshot={snapshot}
-          step={selectedStep}
-          stepIndex={activeIndex}
-          totalSteps={sequence.length}
-        />
-      ) : null}
+      <PickerDialog
+        description="Pick a Home Assistant action block, then fine tune it in the editor."
+        emptyText="No matching actions."
+        eyebrow={depth === 0 ? "Action library" : "Nested builder"}
+        onClose={() => setPickerOpen(false)}
+        onPick={(choice) => addStep(choice as StepTemplateKind)}
+        open={pickerOpen}
+        options={STEP_TEMPLATE_OPTIONS.map((option) => ({
+          detail: option.detail,
+          id: option.kind,
+          label: option.label
+        }))}
+        title={addLabel}
+      />
+
+      <EditorOverlay
+        eyebrow={depth === 0 ? "Action editor" : "Nested editor"}
+        mode={depth === 0 ? "drawer" : "dialog"}
+        onClose={() => setEditorOpen(false)}
+        open={editorOpen && Boolean(selectedStep)}
+        subtitle={selectedStep ? summarizeStep(selectedStep) : undefined}
+        title={`Step ${activeIndex + 1}`}
+      >
+        {selectedStep ? (
+          <StepInspector
+            depth={depth}
+            devicesById={devicesById}
+            entitiesById={entitiesById}
+            onChange={(nextStep) => {
+              if (depth === 0 && onReplaceSelectedStep) {
+                onReplaceSelectedStep(nextStep);
+                return;
+              }
+              replaceStep(activeIndex, nextStep);
+            }}
+            onDuplicate={() => duplicateStep(activeIndex)}
+            onMoveDown={() => moveStep(activeIndex, 1)}
+            onMoveUp={() => moveStep(activeIndex, -1)}
+            onRemove={() => {
+              removeStep(activeIndex);
+              if (sequence.length <= 1) {
+                setEditorOpen(false);
+              }
+            }}
+            snapshot={snapshot}
+            step={selectedStep}
+            stepIndex={activeIndex}
+            totalSteps={sequence.length}
+          />
+        ) : null}
+      </EditorOverlay>
     </div>
   );
 }
@@ -512,8 +665,9 @@ function StepInspector(props: StepInspectorProps) {
     <div className={`step-editor ${depth > 0 ? "step-editor--nested" : ""}`}>
       <div className="step-editor__head">
         <div>
-          <p className="eyebrow">Selected step</p>
-          <h3>{summarizeStep(step)}</h3>
+          <p className="eyebrow">Step settings</p>
+          <h3>{STEP_KIND_LABELS[editableKind]}</h3>
+          <p className="panel-copy">{summarizeStep(step)}</p>
         </div>
         <div className="inline-actions">
           <button className="button button--ghost" disabled={stepIndex === 0} onClick={onMoveUp} type="button">
@@ -1102,6 +1256,7 @@ function SequenceContainerEditor(props: {
   const { devicesById, entitiesById, label, onChange, sequence, snapshot } = props;
   return (
     <SequenceListEditor
+      addLabel="Add action"
       depth={1}
       devicesById={devicesById}
       emptyText={`No steps in ${label.toLowerCase()} yet.`}
@@ -1117,11 +1272,14 @@ function SequenceContainerEditor(props: {
 function ConditionListEditor(props: ConditionListEditorProps) {
   const { conditions, label, onChange } = props;
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const [editorOpen, setEditorOpen] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
   const selectedCondition = conditions[selectedIndex] ?? null;
 
   useEffect(() => {
     if (conditions.length === 0) {
       setSelectedIndex(0);
+      setEditorOpen(false);
       return;
     }
     if (selectedIndex >= conditions.length) {
@@ -1141,27 +1299,12 @@ function ConditionListEditor(props: ConditionListEditorProps) {
           <p className="eyebrow">{label}</p>
           <h4>{conditions.length} condition{conditions.length === 1 ? "" : "s"}</h4>
         </div>
-        <details className="step-add-menu">
-          <summary className="button button--ghost" role="button">Add condition</summary>
-          <div className="step-add-menu__grid">
-            {CONDITION_OPTIONS.map((option) => (
-              <button
-                className="step-add-option"
-                key={option.type}
-                onClick={() =>
-                  updateConditions(
-                    [...conditions.map((condition) => cloneStep(condition)), createConditionTemplate(option.type)],
-                    conditions.length
-                  )
-                }
-                type="button"
-              >
-                <strong>{option.label}</strong>
-                <span>{option.detail}</span>
-              </button>
-            ))}
-          </div>
-        </details>
+        <div className="step-builder__toolbar-actions">
+          {conditions.length > 0 ? <span className="pill pill--muted">Edit one condition at a time</span> : null}
+          <button className="button button--ghost" onClick={() => setPickerOpen(true)} type="button">
+            Add condition
+          </button>
+        </div>
       </div>
 
       <div className="condition-list">
@@ -1170,7 +1313,10 @@ function ConditionListEditor(props: ConditionListEditorProps) {
           <button
             className={`sequence-card ${index === selectedIndex ? "sequence-card--selected" : ""}`}
             key={`condition-${index}`}
-            onClick={() => setSelectedIndex(index)}
+            onClick={() => {
+              setSelectedIndex(index);
+              setEditorOpen(true);
+            }}
             type="button"
           >
             <span>Condition {index + 1}</span>
@@ -1179,62 +1325,96 @@ function ConditionListEditor(props: ConditionListEditorProps) {
         ))}
       </div>
 
-      {selectedCondition ? (
-        <div className="stack-card">
-          <div className="inline-actions">
-            <button
-              className="button button--ghost"
-              disabled={selectedIndex === 0}
-              onClick={() => moveSequenceEntry(conditions, selectedIndex, selectedIndex - 1, updateConditions)}
-              type="button"
-            >
-              Move up
-            </button>
-            <button
-              className="button button--ghost"
-              disabled={selectedIndex >= conditions.length - 1}
-              onClick={() => moveSequenceEntry(conditions, selectedIndex, selectedIndex + 1, updateConditions)}
-              type="button"
-            >
-              Move down
-            </button>
-            <button
-              className="button button--ghost"
-              onClick={() =>
-                updateConditions(
-                  [...conditions.map((condition) => cloneStep(condition)), cloneStep(selectedCondition)],
-                  conditions.length
-                )
-              }
-              type="button"
-            >
-              Duplicate
-            </button>
-            <button
-              className="button button--danger"
-              onClick={() =>
-                updateConditions(
-                  conditions.filter((_, index) => index !== selectedIndex).map((condition) => cloneStep(condition)),
-                  Math.max(0, selectedIndex - 1)
-                )
-              }
-              type="button"
-            >
-              Remove
-            </button>
-          </div>
+      <PickerDialog
+        description="Select the condition type, then configure the details in a focused dialog."
+        emptyText="No matching conditions."
+        eyebrow="Condition library"
+        onClose={() => setPickerOpen(false)}
+        onPick={(choice) => {
+          updateConditions(
+            [...conditions.map((condition) => cloneStep(condition)), createConditionTemplate(choice as ConditionType)],
+            conditions.length
+          );
+          setPickerOpen(false);
+          setEditorOpen(true);
+        }}
+        open={pickerOpen}
+        options={CONDITION_OPTIONS.map((option) => ({
+          detail: option.detail,
+          id: option.type,
+          label: option.label
+        }))}
+        title="Add condition"
+      />
 
-          <ConditionEditor
-            condition={selectedCondition}
-            onChange={(condition) =>
-              updateConditions(
-                conditions.map((entry, index) => (index === selectedIndex ? cloneStep(condition) : cloneStep(entry))),
-                selectedIndex
-              )
-            }
-          />
-        </div>
-      ) : null}
+      <EditorOverlay
+        eyebrow="Condition editor"
+        mode="dialog"
+        onClose={() => setEditorOpen(false)}
+        open={editorOpen && Boolean(selectedCondition)}
+        subtitle={selectedCondition ? summarizeCondition(selectedCondition) : undefined}
+        title={`Condition ${selectedIndex + 1}`}
+      >
+        {selectedCondition ? (
+          <div className="stack-card">
+            <div className="inline-actions">
+              <button
+                className="button button--ghost"
+                disabled={selectedIndex === 0}
+                onClick={() => moveSequenceEntry(conditions, selectedIndex, selectedIndex - 1, updateConditions)}
+                type="button"
+              >
+                Move up
+              </button>
+              <button
+                className="button button--ghost"
+                disabled={selectedIndex >= conditions.length - 1}
+                onClick={() => moveSequenceEntry(conditions, selectedIndex, selectedIndex + 1, updateConditions)}
+                type="button"
+              >
+                Move down
+              </button>
+              <button
+                className="button button--ghost"
+                onClick={() =>
+                  updateConditions(
+                    [...conditions.map((condition) => cloneStep(condition)), cloneStep(selectedCondition)],
+                    conditions.length
+                  )
+                }
+                type="button"
+              >
+                Duplicate
+              </button>
+              <button
+                className="button button--danger"
+                onClick={() => {
+                  updateConditions(
+                    conditions.filter((_, index) => index !== selectedIndex).map((condition) => cloneStep(condition)),
+                    Math.max(0, selectedIndex - 1)
+                  );
+                  if (conditions.length <= 1) {
+                    setEditorOpen(false);
+                  }
+                }}
+                type="button"
+              >
+                Remove
+              </button>
+            </div>
+
+            <ConditionEditor
+              condition={selectedCondition}
+              onChange={(condition) =>
+                updateConditions(
+                  conditions.map((entry, index) => (index === selectedIndex ? cloneStep(condition) : cloneStep(entry))),
+                  selectedIndex
+                )
+              }
+            />
+          </div>
+        ) : null}
+      </EditorOverlay>
     </div>
   );
 }
@@ -1509,11 +1689,14 @@ function ConditionEditor(props: { condition: SequenceStep; onChange: (condition:
 function TriggerListEditor(props: TriggerListEditorProps) {
   const { label, onChange, triggers } = props;
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const [editorOpen, setEditorOpen] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
   const selectedTrigger = triggers[selectedIndex] ?? null;
 
   useEffect(() => {
     if (triggers.length === 0) {
       setSelectedIndex(0);
+      setEditorOpen(false);
       return;
     }
     if (selectedIndex >= triggers.length) {
@@ -1533,22 +1716,12 @@ function TriggerListEditor(props: TriggerListEditorProps) {
           <p className="eyebrow">{label}</p>
           <h4>{triggers.length} trigger{triggers.length === 1 ? "" : "s"}</h4>
         </div>
-        <details className="step-add-menu">
-          <summary className="button button--ghost" role="button">Add trigger</summary>
-          <div className="step-add-menu__grid">
-            {TRIGGER_OPTIONS.map((option) => (
-              <button
-                className="step-add-option"
-                key={option.type}
-                onClick={() => updateTriggers([...triggers.map((trigger) => cloneStep(trigger)), createTriggerTemplate(option.type)], triggers.length)}
-                type="button"
-              >
-                <strong>{option.label}</strong>
-                <span>{option.detail}</span>
-              </button>
-            ))}
-          </div>
-        </details>
+        <div className="step-builder__toolbar-actions">
+          {triggers.length > 0 ? <span className="pill pill--muted">Wait logic stays compact until opened</span> : null}
+          <button className="button button--ghost" onClick={() => setPickerOpen(true)} type="button">
+            Add trigger
+          </button>
+        </div>
       </div>
 
       <div className="condition-list">
@@ -1557,7 +1730,10 @@ function TriggerListEditor(props: TriggerListEditorProps) {
           <button
             className={`sequence-card ${index === selectedIndex ? "sequence-card--selected" : ""}`}
             key={`trigger-${index}`}
-            onClick={() => setSelectedIndex(index)}
+            onClick={() => {
+              setSelectedIndex(index);
+              setEditorOpen(true);
+            }}
             type="button"
           >
             <span>Trigger {index + 1}</span>
@@ -1566,50 +1742,81 @@ function TriggerListEditor(props: TriggerListEditorProps) {
         ))}
       </div>
 
-      {selectedTrigger ? (
-        <div className="stack-card">
-          <div className="inline-actions">
-            <button
-              className="button button--ghost"
-              disabled={selectedIndex === 0}
-              onClick={() => moveSequenceEntry(triggers, selectedIndex, selectedIndex - 1, updateTriggers)}
-              type="button"
-            >
-              Move up
-            </button>
-            <button
-              className="button button--ghost"
-              disabled={selectedIndex >= triggers.length - 1}
-              onClick={() => moveSequenceEntry(triggers, selectedIndex, selectedIndex + 1, updateTriggers)}
-              type="button"
-            >
-              Move down
-            </button>
-            <button
-              className="button button--danger"
-              onClick={() =>
+      <PickerDialog
+        description="Pick the trigger type first, then fill in the details in a focused dialog."
+        emptyText="No matching triggers."
+        eyebrow="Trigger library"
+        onClose={() => setPickerOpen(false)}
+        onPick={(choice) => {
+          updateTriggers([...triggers.map((trigger) => cloneStep(trigger)), createTriggerTemplate(choice as TriggerType)], triggers.length);
+          setPickerOpen(false);
+          setEditorOpen(true);
+        }}
+        open={pickerOpen}
+        options={TRIGGER_OPTIONS.map((option) => ({
+          detail: option.detail,
+          id: option.type,
+          label: option.label
+        }))}
+        title="Add trigger"
+      />
+
+      <EditorOverlay
+        eyebrow="Trigger editor"
+        mode="dialog"
+        onClose={() => setEditorOpen(false)}
+        open={editorOpen && Boolean(selectedTrigger)}
+        subtitle={selectedTrigger ? summarizeTrigger(selectedTrigger) : undefined}
+        title={`Trigger ${selectedIndex + 1}`}
+      >
+        {selectedTrigger ? (
+          <div className="stack-card">
+            <div className="inline-actions">
+              <button
+                className="button button--ghost"
+                disabled={selectedIndex === 0}
+                onClick={() => moveSequenceEntry(triggers, selectedIndex, selectedIndex - 1, updateTriggers)}
+                type="button"
+              >
+                Move up
+              </button>
+              <button
+                className="button button--ghost"
+                disabled={selectedIndex >= triggers.length - 1}
+                onClick={() => moveSequenceEntry(triggers, selectedIndex, selectedIndex + 1, updateTriggers)}
+                type="button"
+              >
+                Move down
+              </button>
+              <button
+                className="button button--danger"
+                onClick={() => {
+                  updateTriggers(
+                    triggers.filter((_, index) => index !== selectedIndex).map((trigger) => cloneStep(trigger)),
+                    Math.max(0, selectedIndex - 1)
+                  );
+                  if (triggers.length <= 1) {
+                    setEditorOpen(false);
+                  }
+                }}
+                type="button"
+              >
+                Remove
+              </button>
+            </div>
+
+            <TriggerEditor
+              onChange={(trigger) =>
                 updateTriggers(
-                  triggers.filter((_, index) => index !== selectedIndex).map((trigger) => cloneStep(trigger)),
-                  Math.max(0, selectedIndex - 1)
+                  triggers.map((entry, index) => (index === selectedIndex ? cloneStep(trigger) : cloneStep(entry))),
+                  selectedIndex
                 )
               }
-              type="button"
-            >
-              Remove
-            </button>
+              trigger={selectedTrigger}
+            />
           </div>
-
-          <TriggerEditor
-            onChange={(trigger) =>
-              updateTriggers(
-                triggers.map((entry, index) => (index === selectedIndex ? cloneStep(trigger) : cloneStep(entry))),
-                selectedIndex
-              )
-            }
-            trigger={selectedTrigger}
-          />
-        </div>
-      ) : null}
+        ) : null}
+      </EditorOverlay>
     </div>
   );
 }
