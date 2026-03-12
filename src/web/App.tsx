@@ -5,6 +5,7 @@ import {
   controlEntity,
   deleteConfig,
   exportAutomation,
+  exportBlueprintPackage,
   fetchAutomations,
   fetchDeviceProperties,
   fetchDiscovery,
@@ -103,6 +104,7 @@ export function App() {
   const [configSearch, setConfigSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [exportingPackage, setExportingPackage] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [fatalError, setFatalError] = useState<string | null>(null);
   const [activeWorkspace, setActiveWorkspace] = useState<WorkspaceMode>("editor");
@@ -432,6 +434,22 @@ export function App() {
     }
   }
 
+  async function handleExportPackage(): Promise<void> {
+    if (!draft) {
+      return;
+    }
+
+    try {
+      setExportingPackage(true);
+      const fileName = await exportBlueprintPackage(draft);
+      setMessage(`Downloaded ${fileName}.`);
+    } catch (error) {
+      setFatalError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setExportingPackage(false);
+    }
+  }
+
   function handleImportAutomation(automation: AutomationSummary): void {
     if (!draft) {
       return;
@@ -493,6 +511,7 @@ export function App() {
       <BlueprintPanel
         areas={snapshot?.areas ?? []}
         draft={draft}
+        exportingPackage={exportingPackage}
         onAreaChange={(areaId) =>
           updateDraft((nextDraft) => {
             const metadata = ensureSwitchMetadata(nextDraft);
@@ -508,6 +527,7 @@ export function App() {
         }
         onDelete={() => void handleDelete()}
         onEnabledToggle={(enabled) => void handleEnabledToggle(enabled)}
+        onExportPackage={() => void handleExportPackage()}
         onGridChange={(grid) =>
           updateDraft((nextDraft) => {
             const layout = ensureLayoutMetadata(nextDraft, selectedBlueprint.buttons.length);

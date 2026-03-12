@@ -18,6 +18,21 @@ async function parseResponse<T>(response: Response): Promise<T> {
   return parsed;
 }
 
+async function parseError(response: Response): Promise<Error> {
+  const body = await response.text();
+  try {
+    const parsed = body ? (JSON.parse(body) as { error?: string }) : null;
+    return new Error(parsed?.error ?? `Request failed with ${response.status}`);
+  } catch {
+    return new Error(body || `Request failed with ${response.status}`);
+  }
+}
+
+function downloadNameFromDisposition(value: string | null, fallback: string): string {
+  const match = value?.match(/filename="?([^";]+)"?/i);
+  return match?.[1] ?? fallback;
+}
+
 export async function fetchHealth(): Promise<HealthResponse> {
   return parseResponse<HealthResponse>(await fetch("/api/health"));
 }
@@ -106,6 +121,34 @@ export async function exportAutomation(body: {
       body: JSON.stringify(body)
     })
   );
+}
+
+export async function exportBlueprintPackage(config: SwitchManagerConfig): Promise<string> {
+  const response = await fetch("/api/blueprints/export-package", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ config } satisfies SaveConfigRequest)
+  });
+
+  if (!response.ok) {
+    throw await parseError(response);
+  }
+
+  const blob = await response.blob();
+  const fileName = downloadNameFromDisposition(
+    response.headers.get("content-disposition"),
+    `switch-manager-blueprint-${config.blueprintId}.tar.gz`
+  );
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = fileName;
+  anchor.style.display = "none";
+  document.body.append(anchor);
+  anchor.click();
+  anchor.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  return fileName;
 }
 
 export async function saveConfig(config: SwitchManagerConfig): Promise<SwitchManagerConfig> {

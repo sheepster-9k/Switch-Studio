@@ -20,10 +20,12 @@ import {
 interface BlueprintPanelProps {
   areas: AreaSummary[];
   draft: SwitchManagerConfig;
+  exportingPackage: boolean;
   onAreaChange: (areaId: string | null) => void;
   onButtonLayoutChange: (index: number, override: SwitchManagerButtonLayoutOverride | null) => void;
   onDelete: () => void;
   onEnabledToggle: (enabled: boolean) => void;
+  onExportPackage: () => void;
   onGridChange: (grid: Partial<SwitchManagerGridSettings>) => void;
   onIdentifierChange: (value: string) => void;
   onNameChange: (value: string) => void;
@@ -229,10 +231,12 @@ export function BlueprintPanel(props: BlueprintPanelProps) {
   const {
     areas,
     draft,
+    exportingPackage,
     onAreaChange,
     onButtonLayoutChange,
     onDelete,
     onEnabledToggle,
+    onExportPackage,
     onGridChange,
     onIdentifierChange,
     onNameChange,
@@ -498,7 +502,17 @@ export function BlueprintPanel(props: BlueprintPanelProps) {
             <p className="eyebrow">Blueprint</p>
             <h3>{selectedBlueprint.name}</h3>
           </div>
-          <span className="pill">{selectedBlueprint.buttons.length} buttons</span>
+          <div className="inline-actions">
+            <span className="pill">{selectedBlueprint.buttons.length} buttons</span>
+            <button
+              className="button button--ghost"
+              disabled={exportingPackage}
+              onClick={onExportPackage}
+              type="button"
+            >
+              {exportingPackage ? "Preparing..." : "Export package"}
+            </button>
+          </div>
         </div>
 
         <div className="blueprint-canvas-frame">

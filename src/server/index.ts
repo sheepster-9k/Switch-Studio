@@ -2,6 +2,7 @@ import { constants } from "node:fs";
 import { access, readFile } from "node:fs/promises";
 import { basename, dirname, extname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { gzipSync } from "node:zlib";
 
 import fastifyStatic from "@fastify/static";
 import Fastify from "fastify";
@@ -23,6 +24,7 @@ import type {
   SequenceStep,
   StudioSnapshot,
   SwitchManagerBlueprint,
+  SwitchManagerButtonLayoutOverride,
   SwitchManagerConfig,
   SwitchManagerVirtualAction
 } from "../shared/types.js";
@@ -58,6 +60,11 @@ interface BlueprintFileEntry {
   name: string;
   modified: number;
   isYaml: boolean;
+}
+
+interface BlueprintPackageEntry {
+  data: Buffer;
+  name: string;
 }
 
 interface CachedBlueprintCatalog {
@@ -506,6 +513,368 @@ async function fileExists(path: string): Promise<boolean> {
 
 function sanitizeBlueprintId(value: string): string | null {
   return /^[A-Za-z0-9._-]+$/.test(value) ? value : null;
+}
+
+function cloneValue<T>(value: T): T {
+  if (typeof structuredClone === "function") {
+    return structuredClone(value);
+  }
+  return JSON.parse(JSON.stringify(value)) as T;
+}
+
+function slugifyBlueprintPart(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .replace(/-{2,}/g, "-");
+}
+
+function exportBlueprintStem(blueprint: SwitchManagerBlueprint): string {
+  const blueprintId = slugifyBlueprintPart(blueprint.id);
+  if (blueprintId) {
+    return blueprintId;
+  }
+  const service = slugifyBlueprintPart(blueprint.service);
+  const name = slugifyBlueprintPart(blueprint.name);
+  const combined = [service, name].filter(Boolean).join("-");
+  return combined || "switch-manager-blueprint";
+}
+
+function buttonLayoutOverridesFromConfig(
+  configEntry: SwitchManagerConfig,
+  expectedCount: number
+): Array<SwitchManagerButtonLayoutOverride | null> {
+  const metadata = isRecord(configEntry.metadata) ? configEntry.metadata : null;
+  const layout = metadata && isRecord(metadata.layout) ? metadata.layout : null;
+  const rawOverrides = layout && Array.isArray(layout.buttonOverrides) ? layout.buttonOverrides : [];
+
+  return Array.from({ length: expectedCount }, (_, index) => {
+    const rawOverride = rawOverrides[index];
+    if (!isRecord(rawOverride)) {
+      return null;
+    }
+
+    const width = Math.max(12, asNumber(rawOverride.width, 12));
+    const height = Math.max(12, asNumber(rawOverride.height, width));
+
+    return {
+      shape: rawOverride.shape === "circle" ? "circle" : "rect",
+      x: asNumber(rawOverride.x, 0),
+      y: asNumber(rawOverride.y, 0),
+      width,
+      height
+    };
+  });
+}
+
+function fallbackBlueprintDefinition(blueprint: SwitchManagerBlueprint): Record<string, unknown> {
+  return {
+    name: blueprint.name,
+    service: blueprint.service,
+    event_type: blueprint.eventType,
+    ...(blueprint.identifierKey ? { identifier_key: blueprint.identifierKey } : {}),
+    ...(blueprint.info ? { info: blueprint.info } : {}),
+    buttons: blueprint.buttons.map((button) => ({
+      ...(typeof button.x === "number" ? { x: button.x } : {}),
+      ...(typeof button.y === "number" ? { y: button.y } : {}),
+      ...(typeof button.width === "number" ? { width: button.width } : {}),
+      ...(typeof button.height === "number" ? { height: button.height } : {}),
+      ...(typeof button.d === "string" ? { d: button.d } : {}),
+      ...(button.conditions?.length ? { conditions: button.conditions } : {}),
+      actions: button.actions.map((action) => ({
+        title: action.title,
+        ...(action.conditions?.length ? { conditions: action.conditions } : {})
+      }))
+    }))
+  };
+}
+
+async function loadRawBlueprintDefinition(
+  client: HomeAssistantAgentClient,
+  config: StudioConfig,
+  blueprintId: string
+): Promise<Record<string, unknown> | null> {
+  const safeBlueprintId = sanitizeBlueprintId(blueprintId);
+  if (!safeBlueprintId || !client.hasKey) {
+    return null;
+  }
+
+  try {
+    const directory = config.switchManagerBlueprintDir.replace(/\/+$/, "");
+    const parsed = await client.parseYaml(`${directory}/${safeBlueprintId}.yaml`);
+    return isRecord(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function applyLayoutOverridesToBlueprintDefinition(
+  definition: Record<string, unknown>,
+  configEntry: SwitchManagerConfig,
+  warnings: string[]
+): Record<string, unknown> {
+  const nextDefinition = cloneValue(definition);
+  const rawButtons = asArray<Record<string, unknown>>(nextDefinition.buttons).map((button) =>
+    isRecord(button) ? cloneValue(button) : {}
+  );
+  const overrides = buttonLayoutOverridesFromConfig(configEntry, rawButtons.length);
+  const singleButton = rawButtons.length <= 1;
+
+  nextDefinition.buttons = rawButtons.map((rawButton, index) => {
+    const nextButton = cloneValue(rawButton);
+    const hadShape = ["x", "y", "width", "height", "d"].some((key) => key in nextButton);
+    delete nextButton.x;
+    delete nextButton.y;
+    delete nextButton.width;
+    delete nextButton.height;
+    delete nextButton.d;
+
+    if (singleButton) {
+      if (hadShape || overrides[index]) {
+        warnings.push("Single-button exports omit shape properties to match Switch Manager blueprint rules.");
+      }
+      return nextButton;
+    }
+
+    const override = overrides[index];
+    if (!override) {
+      if ("x" in rawButton) {
+        nextButton.x = rawButton.x;
+      }
+      if ("y" in rawButton) {
+        nextButton.y = rawButton.y;
+      }
+      if ("width" in rawButton) {
+        nextButton.width = rawButton.width;
+      }
+      if ("height" in rawButton) {
+        nextButton.height = rawButton.height;
+      }
+      if ("d" in rawButton) {
+        nextButton.d = rawButton.d;
+      }
+      return nextButton;
+    }
+
+    if (override.shape === "circle") {
+      if (Math.abs(override.width - override.height) > 1) {
+        warnings.push(
+          `Button ${index + 1} used a non-uniform circle override. Export normalized it to a single width value.`
+        );
+      }
+
+      nextButton.x = Math.round(override.x + override.width / 2);
+      nextButton.y = Math.round(override.y + override.height / 2);
+      nextButton.width = Math.round(Math.max(override.width, override.height));
+      return nextButton;
+    }
+
+    nextButton.x = Math.round(override.x);
+    nextButton.y = Math.round(override.y);
+    nextButton.width = Math.round(override.width);
+    nextButton.height = Math.round(override.height);
+    return nextButton;
+  });
+
+  return nextDefinition;
+}
+
+async function loadBlueprintImageBuffer(
+  blueprintId: string,
+  config: StudioConfig,
+  wsClient: HomeAssistantClient
+): Promise<Buffer | null> {
+  const localImage = await serveLocalBlueprintImage(config.blueprintImageDir, blueprintId);
+  if (localImage) {
+    return localImage;
+  }
+
+  if (!wsClient.hasToken) {
+    return null;
+  }
+
+  const response = await wsClient.fetch(`/assets/switch_manager/${encodeURIComponent(blueprintId)}.png`);
+  if (!response.ok) {
+    return null;
+  }
+
+  return Buffer.from(await response.arrayBuffer());
+}
+
+function readPngDimensions(buffer: Buffer): { height: number; width: number } | null {
+  if (buffer.length < 24) {
+    return null;
+  }
+
+  const signature = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+  if (!signature.every((value, index) => buffer[index] === value)) {
+    return null;
+  }
+
+  return {
+    width: buffer.readUInt32BE(16),
+    height: buffer.readUInt32BE(20)
+  };
+}
+
+function buildBlueprintSubmissionNotes(args: {
+  fileStem: string;
+  imageDimensions: { height: number; width: number } | null;
+  includesImage: boolean;
+  sourceBlueprintId: string;
+  usedRawBlueprint: boolean;
+  warnings: string[];
+}): string {
+  const lines = [
+    "# Switch Manager Blueprint Export",
+    "",
+    `Generated from source blueprint \`${args.sourceBlueprintId}\`.`,
+    `Target blueprint file: \`${args.fileStem}.yaml\`.`,
+    args.includesImage
+      ? `Included image: \`${args.fileStem}.png\`${args.imageDimensions ? ` (${args.imageDimensions.width}x${args.imageDimensions.height})` : ""}.`
+      : "Included image: none.",
+    args.usedRawBlueprint
+      ? "This export started from the raw blueprint YAML and applied the current layout overrides from Switch Manager Studio."
+      : "This export used the in-memory Switch Manager blueprint data because raw YAML access was unavailable.",
+    "Live switch identifiers, rooms, automations, and action sequences are not included.",
+    "",
+    "Submission checklist",
+    "",
+    "- Use a lowercase filename in the form `{service-name}-{switch-name-or-type}.yaml`.",
+    "- If you include an image, keep the same filename stem and use `.png`.",
+    "- PNG images should stay within 500px height or 800px width.",
+    "- Transparent backgrounds are preferred.",
+    "- Single-button blueprints should not contain shape properties.",
+    "- Keep action titles lowercase and ordered `init`, `press`, `press 2x`, `press 3x`, `hold`, `hold (released)`, then unique actions.",
+    "- For shared MQTT blueprints, use the integration's default topic format rather than a customized one.",
+    "",
+    "Reference",
+    "",
+    "- https://github.com/Sian-Lee-SA/Home-Assistant-Switch-Manager",
+    "- https://raw.githubusercontent.com/Sian-Lee-SA/Home-Assistant-Switch-Manager/master/README.md"
+  ];
+
+  if (args.warnings.length) {
+    lines.push("", "Warnings", "");
+    for (const warning of args.warnings) {
+      lines.push(`- ${warning}`);
+    }
+  }
+
+  return `${lines.join("\n")}\n`;
+}
+
+function writeTarStringField(header: Buffer, offset: number, length: number, value: string): void {
+  const encoded = Buffer.from(value);
+  encoded.copy(header, offset, 0, Math.min(encoded.length, length));
+}
+
+function writeTarOctalField(header: Buffer, offset: number, length: number, value: number): void {
+  const encoded = Math.max(0, Math.trunc(value)).toString(8).padStart(length - 1, "0");
+  writeTarStringField(header, offset, length, `${encoded}\0`);
+}
+
+function buildTarArchive(entries: BlueprintPackageEntry[]): Buffer {
+  const blocks: Buffer[] = [];
+
+  for (const entry of entries) {
+    const header = Buffer.alloc(512, 0);
+    writeTarStringField(header, 0, 100, entry.name);
+    writeTarOctalField(header, 100, 8, 0o644);
+    writeTarOctalField(header, 108, 8, 0);
+    writeTarOctalField(header, 116, 8, 0);
+    writeTarOctalField(header, 124, 12, entry.data.length);
+    writeTarOctalField(header, 136, 12, Math.floor(Date.now() / 1000));
+    header.fill(0x20, 148, 156);
+    header[156] = "0".charCodeAt(0);
+    writeTarStringField(header, 257, 6, "ustar");
+    writeTarStringField(header, 263, 2, "00");
+
+    const checksum = header.reduce((sum, byte) => sum + byte, 0);
+    const checksumValue = checksum.toString(8).padStart(6, "0");
+    writeTarStringField(header, 148, 8, `${checksumValue}\0 `);
+
+    blocks.push(header, entry.data);
+    const remainder = entry.data.length % 512;
+    if (remainder !== 0) {
+      blocks.push(Buffer.alloc(512 - remainder, 0));
+    }
+  }
+
+  blocks.push(Buffer.alloc(1024, 0));
+  return Buffer.concat(blocks);
+}
+
+async function buildBlueprintExportPackage(args: {
+  agentClient: HomeAssistantAgentClient;
+  wsClient: HomeAssistantClient;
+  config: StudioConfig;
+  draft: SwitchManagerConfig;
+  blueprint: SwitchManagerBlueprint;
+}): Promise<{ content: Buffer; fileName: string }> {
+  const rawBlueprint = await loadRawBlueprintDefinition(args.agentClient, args.config, args.blueprint.id);
+  const exportWarnings: string[] = [];
+  const exportDefinition = applyLayoutOverridesToBlueprintDefinition(
+    rawBlueprint ?? fallbackBlueprintDefinition(args.blueprint),
+    args.draft,
+    exportWarnings
+  );
+  if (!rawBlueprint) {
+    exportWarnings.unshift(
+      "Raw blueprint YAML was unavailable, so this package was generated from the loaded Switch Manager blueprint data."
+    );
+    if (args.blueprint.isMqtt) {
+      exportWarnings.push(
+        "MQTT topic format details are not exposed by the loaded blueprint snapshot. Review and add `mqtt_topic_format` before submitting."
+      );
+    }
+  }
+  const fileStem = exportBlueprintStem(args.blueprint);
+  const imageBuffer = await loadBlueprintImageBuffer(args.blueprint.id, args.config, args.wsClient);
+  const imageDimensions = imageBuffer ? readPngDimensions(imageBuffer) : null;
+
+  if (args.blueprint.buttons.length > 1 && !imageBuffer) {
+    exportWarnings.push("Multiple-button blueprints should include a matching PNG, but no image was available to package.");
+  }
+  if (imageDimensions && (imageDimensions.height > 500 || imageDimensions.width > 800)) {
+    exportWarnings.push(
+      `The packaged PNG is ${imageDimensions.width}x${imageDimensions.height}; Switch Manager recommends a maximum of 800px width or 500px height.`
+    );
+  }
+
+  const notes = buildBlueprintSubmissionNotes({
+    fileStem,
+    imageDimensions,
+    includesImage: Boolean(imageBuffer),
+    sourceBlueprintId: args.blueprint.id,
+    usedRawBlueprint: Boolean(rawBlueprint),
+    warnings: exportWarnings
+  });
+
+  const entries: BlueprintPackageEntry[] = [
+    {
+      name: `${fileStem}.yaml`,
+      data: Buffer.from(stringifyYaml(exportDefinition).replace(/\s*$/, "\n"), "utf8")
+    },
+    {
+      name: "SUBMISSION_NOTES.md",
+      data: Buffer.from(notes, "utf8")
+    }
+  ];
+
+  if (imageBuffer) {
+    entries.push({
+      name: `${fileStem}.png`,
+      data: imageBuffer
+    });
+  }
+
+  return {
+    fileName: `switch-manager-blueprint-${fileStem}.tar.gz`,
+    content: gzipSync(buildTarArchive(entries))
+  };
 }
 
 function preferredBackend(agentClient: HomeAssistantAgentClient, wsClient: HomeAssistantClient): StudioBackendMode {
@@ -1647,6 +2016,50 @@ async function main(): Promise<void> {
           alias: body.alias
         })
       };
+    } catch (error) {
+      request.log.error(error);
+      reply.code(400);
+      return { error: error instanceof Error ? error.message : String(error) };
+    }
+  });
+
+  app.post("/api/blueprints/export-package", async (request, reply) => {
+    const backend = preferredBackend(agentClient, wsClient);
+    if (backend === "none") {
+      reply.code(503);
+      return { error: "Blueprint export requires HA agent or HA token access" };
+    }
+
+    const body = request.body as SaveConfigRequest | undefined;
+    const draft = body?.config;
+    if (!draft || typeof draft.blueprintId !== "string" || !draft.blueprintId.trim()) {
+      reply.code(400);
+      return { error: "config.blueprintId is required" };
+    }
+
+    try {
+      const snapshot =
+        backend === "agent"
+          ? await buildSnapshotWithAgent(agentClient, config)
+          : await buildSnapshotWithWebsocket(wsClient);
+      const blueprint = snapshot.blueprints.find((entry) => entry.id === draft.blueprintId);
+      if (!blueprint) {
+        throw new Error(`Blueprint ${draft.blueprintId} was not found`);
+      }
+
+      const packageResult = await buildBlueprintExportPackage({
+        agentClient,
+        wsClient,
+        config,
+        draft,
+        blueprint
+      });
+
+      reply.header("Cache-Control", "no-store");
+      reply.header("Content-Disposition", `attachment; filename=\"${packageResult.fileName}\"`);
+      reply.header("Content-Length", String(packageResult.content.length));
+      reply.header("Content-Type", "application/gzip");
+      return packageResult.content;
     } catch (error) {
       request.log.error(error);
       reply.code(400);
