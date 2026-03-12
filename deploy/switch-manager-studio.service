@@ -1,0 +1,30 @@
+[Unit]
+Description=Switch Manager Studio
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=switch-manager
+Group=switch-manager
+WorkingDirectory=/opt/switch-manager-studio
+EnvironmentFile=-/etc/default/switch-manager-studio
+Environment=NODE_ENV=production
+Environment=HOST=0.0.0.0
+Environment=PORT=8878
+ExecStart=/usr/local/bin/node /opt/switch-manager-studio/dist/server/index.js
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=full
+ProtectControlGroups=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+RestrictSUIDSGID=true
+LockPersonality=true
+ReadWritePaths=/opt/switch-manager-studio
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,35 @@
+{
+  "name": "switch-manager-studio",
+  "version": "0.1.0",
+  "description": "Standalone interactive entity UI for Home Assistant Switch Manager",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "build": "npm run build:server && npm run build:web",
+    "build:server": "tsc -p tsconfig.server.json",
+    "build:web": "vite build",
+    "dev": "concurrently -k \"npm:dev:server\" \"npm:dev:web\"",
+    "dev:server": "tsx watch src/server/index.ts",
+    "dev:web": "vite",
+    "start": "node dist/server/index.js"
+  },
+  "dependencies": {
+    "@fastify/static": "^8.3.0",
+    "fastify": "^5.6.1",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "ws": "^8.18.3",
+    "yaml": "^2.8.1"
+  },
+  "devDependencies": {
+    "@types/node": "^24.3.1",
+    "@types/react": "^19.2.2",
+    "@types/react-dom": "^19.2.2",
+    "@types/ws": "^8.18.1",
+    "@vitejs/plugin-react": "^5.0.2",
+    "concurrently": "^9.2.1",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.2",
+    "vite": "^7.1.7"
+  }
+}
