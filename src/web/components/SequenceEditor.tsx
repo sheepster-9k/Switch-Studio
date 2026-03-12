@@ -963,142 +963,161 @@ function ChooseStepEditor(props: {
   const branches = Array.isArray(step.choose)
     ? step.choose.map((entry) => (isRecord(entry) ? entry : { conditions: [], sequence: [] }))
     : [];
-  const [selectedBranchIndex, setSelectedBranchIndex] = useState(0);
-  const safeBranchIndex = branches.length === 0 ? 0 : Math.min(selectedBranchIndex, branches.length - 1);
-  const selectedBranch = branches[safeBranchIndex] ?? null;
+  const [expandedSection, setExpandedSection] = useState<string | null>(branches.length > 0 ? "option-0" : "default");
 
   useEffect(() => {
-    if (safeBranchIndex !== selectedBranchIndex) {
-      setSelectedBranchIndex(safeBranchIndex);
+    if (expandedSection === null) {
+      return;
     }
-  }, [safeBranchIndex, selectedBranchIndex]);
+    if (expandedSection === "default") {
+      return;
+    }
+    const optionIndex = Number(expandedSection.replace("option-", ""));
+    if (Number.isNaN(optionIndex) || optionIndex >= branches.length) {
+      setExpandedSection(branches.length > 0 ? `option-${Math.max(0, branches.length - 1)}` : "default");
+    }
+  }, [branches.length, expandedSection]);
 
-  function updateBranches(nextBranches: Array<Record<string, unknown>>, nextSelectedIndex = safeBranchIndex): void {
+  function updateBranches(nextBranches: Array<Record<string, unknown>>, nextExpandedSection = expandedSection): void {
     const nextStep = cloneStep(step);
     nextStep.choose = nextBranches;
     onChange(nextStep);
-    setSelectedBranchIndex(Math.max(0, Math.min(nextSelectedIndex, nextBranches.length - 1)));
+    setExpandedSection(nextExpandedSection);
   }
 
   function updateBranch(index: number, updater: (branch: Record<string, unknown>) => Record<string, unknown>): void {
     const nextBranches = branches.map((branch, branchIndex) =>
       branchIndex === index ? updater(structuredCloneBranch(branch)) : structuredCloneBranch(branch)
     );
-    updateBranches(nextBranches, index);
+    updateBranches(nextBranches, `option-${index}`);
   }
 
   return (
     <div className="branch-editor">
       <div className="step-builder__toolbar">
         <div>
-          <p className="eyebrow">Choose branches</p>
-          <h4>{branches.length} branch{branches.length === 1 ? "" : "es"}</h4>
+          <p className="eyebrow">Choose options</p>
+          <h4>{branches.length} option{branches.length === 1 ? "" : "s"}</h4>
         </div>
         <button
           className="button"
           onClick={() => {
             const nextBranches = [...branches.map((branch) => structuredCloneBranch(branch)), createChooseBranchTemplate()];
-            updateBranches(nextBranches, nextBranches.length - 1);
+            updateBranches(nextBranches, `option-${nextBranches.length - 1}`);
           }}
           type="button"
         >
-          Add branch
+          Add option
         </button>
       </div>
 
-      <div className="branch-tabs">
-        {branches.length === 0 ? <div className="empty-state">No branches yet. Add one to begin.</div> : null}
+      <div className="choose-options">
+        {branches.length === 0 ? <div className="empty-state">No options yet. Add one to begin.</div> : null}
         {branches.map((branch, index) => (
+          <article className="choose-option" key={`branch-${index}`}>
+            <button
+              className={`choose-option__header ${
+                expandedSection === `option-${index}` ? "choose-option__header--open" : ""
+              }`}
+              onClick={() =>
+                setExpandedSection((current) => (current === `option-${index}` ? null : `option-${index}`))
+              }
+              type="button"
+            >
+              <div>
+                <strong>{summarizeChooseOption(branch, index)}</strong>
+                <span>
+                  {asSequence(branch.conditions).length} condition{asSequence(branch.conditions).length === 1 ? "" : "s"} •{" "}
+                  {asSequence(branch.sequence).length} action{asSequence(branch.sequence).length === 1 ? "" : "s"}
+                </span>
+              </div>
+              <span className="choose-option__caret">
+                {expandedSection === `option-${index}` ? "▾" : "▸"}
+              </span>
+            </button>
+
+            {expandedSection === `option-${index}` ? (
+              <div className="choose-option__body">
+                <div className="inline-actions">
+                  <button
+                    className="button button--ghost"
+                    disabled={index === 0}
+                    onClick={() => moveArrayEntry(branches, index, index - 1, (nextBranches) => updateBranches(nextBranches, `option-${index - 1}`))}
+                    type="button"
+                  >
+                    Move up
+                  </button>
+                  <button
+                    className="button button--ghost"
+                    disabled={index >= branches.length - 1}
+                    onClick={() => moveArrayEntry(branches, index, index + 1, (nextBranches) => updateBranches(nextBranches, `option-${index + 1}`))}
+                    type="button"
+                  >
+                    Move down
+                  </button>
+                  <button
+                    className="button button--danger"
+                    onClick={() => {
+                      const nextBranches = branches
+                        .filter((_, branchIndex) => branchIndex !== index)
+                        .map((entry) => structuredCloneBranch(entry));
+                      updateBranches(
+                        nextBranches,
+                        nextBranches.length === 0 ? "default" : `option-${Math.max(0, index - 1)}`
+                      );
+                    }}
+                    type="button"
+                  >
+                    Remove option
+                  </button>
+                </div>
+
+                <ConditionListEditor
+                  conditions={asSequence(branch.conditions)}
+                  label="Conditions"
+                  onChange={(conditions) => updateBranch(index, (entry) => setSequenceField(entry, "conditions", conditions))}
+                />
+
+                <SequenceContainerEditor
+                  devicesById={devicesById}
+                  entitiesById={entitiesById}
+                  label="Actions"
+                  onChange={(sequence) => updateBranch(index, (entry) => setSequenceField(entry, "sequence", sequence))}
+                  sequence={asSequence(branch.sequence)}
+                  snapshot={snapshot}
+                />
+              </div>
+            ) : null}
+          </article>
+        ))}
+
+        <article className="choose-option">
           <button
-            className={`action-tab ${index === safeBranchIndex ? "action-tab--selected" : ""}`}
-            key={`branch-${index}`}
-            onClick={() => setSelectedBranchIndex(index)}
+            className={`choose-option__header ${expandedSection === "default" ? "choose-option__header--open" : ""}`}
+            onClick={() => setExpandedSection((current) => (current === "default" ? null : "default"))}
             type="button"
           >
-            <strong>{branch.alias && typeof branch.alias === "string" ? branch.alias : `Branch ${index + 1}`}</strong>
-            <span>{asSequence(branch.sequence).length} steps</span>
-          </button>
-        ))}
-      </div>
-
-      {selectedBranch ? (
-        <div className="stack-card">
-          <div className="step-editor__head">
             <div>
-              <p className="eyebrow">Selected branch</p>
-              <h4>{selectedBranch.alias && typeof selectedBranch.alias === "string" ? selectedBranch.alias : `Branch ${safeBranchIndex + 1}`}</h4>
+              <strong>Default actions</strong>
+              <span>{asSequence(step.default).length} action{asSequence(step.default).length === 1 ? "" : "s"}</span>
             </div>
-            <div className="inline-actions">
-              <button
-                className="button button--ghost"
-                disabled={safeBranchIndex === 0}
-                onClick={() => moveArrayEntry(branches, safeBranchIndex, safeBranchIndex - 1, updateBranches)}
-                type="button"
-              >
-                Move up
-              </button>
-              <button
-                className="button button--ghost"
-                disabled={safeBranchIndex >= branches.length - 1}
-                onClick={() => moveArrayEntry(branches, safeBranchIndex, safeBranchIndex + 1, updateBranches)}
-                type="button"
-              >
-                Move down
-              </button>
-              <button
-                className="button button--danger"
-                onClick={() => {
-                  const nextBranches = branches.filter((_, index) => index !== safeBranchIndex).map((branch) => structuredCloneBranch(branch));
-                  updateBranches(nextBranches, Math.max(0, safeBranchIndex - 1));
-                }}
-                type="button"
-              >
-                Remove branch
-              </button>
+            <span className="choose-option__caret">{expandedSection === "default" ? "▾" : "▸"}</span>
+          </button>
+
+          {expandedSection === "default" ? (
+            <div className="choose-option__body">
+              <SequenceContainerEditor
+                devicesById={devicesById}
+                entitiesById={entitiesById}
+                label="Default actions"
+                onChange={(sequence) => onChange(setSequenceField(step, "default", sequence))}
+                sequence={asSequence(step.default)}
+                snapshot={snapshot}
+              />
             </div>
-          </div>
-
-          <label className="field">
-            <span>Branch alias</span>
-            <input
-              onChange={(event) =>
-                updateBranch(safeBranchIndex, (branch) => setOptionalStringField(branch, "alias", event.target.value))
-              }
-              placeholder="Optional branch label"
-              type="text"
-              value={typeof selectedBranch.alias === "string" ? selectedBranch.alias : ""}
-            />
-          </label>
-
-          <ConditionListEditor
-            conditions={asSequence(selectedBranch.conditions)}
-            label="Branch conditions"
-            onChange={(conditions) =>
-              updateBranch(safeBranchIndex, (branch) => setSequenceField(branch, "conditions", conditions))
-            }
-          />
-
-          <SequenceContainerEditor
-            devicesById={devicesById}
-            entitiesById={entitiesById}
-            label="Branch steps"
-            onChange={(sequence) =>
-              updateBranch(safeBranchIndex, (branch) => setSequenceField(branch, "sequence", sequence))
-            }
-            sequence={asSequence(selectedBranch.sequence)}
-            snapshot={snapshot}
-          />
-        </div>
-      ) : null}
-
-      <SequenceContainerEditor
-        devicesById={devicesById}
-        entitiesById={entitiesById}
-        label="Default branch"
-        onChange={(sequence) => onChange(setSequenceField(step, "default", sequence))}
-        sequence={asSequence(step.default)}
-        snapshot={snapshot}
-      />
+          ) : null}
+        </article>
+      </div>
     </div>
   );
 }
@@ -2507,6 +2526,17 @@ function summarizeCondition(condition: SequenceStep): string {
     return `${type.toUpperCase()} group`;
   }
   return "custom condition";
+}
+
+function summarizeChooseOption(option: Record<string, unknown>, index: number): string {
+  const conditions = asSequence(option.conditions);
+  if (conditions.length === 0) {
+    return `Option ${index + 1}: No conditions`;
+  }
+  if (conditions.length === 1) {
+    return `Option ${index + 1}: If ${summarizeCondition(conditions[0])}`;
+  }
+  return `Option ${index + 1}: If ${conditions.length} conditions match`;
 }
 
 function summarizeTrigger(trigger: SequenceStep): string {

@@ -874,6 +874,61 @@ textarea {
   grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
 }
 
+.choose-options {
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+}
+
+.choose-option {
+  background: rgba(7, 10, 9, 0.24);
+  border: 1px solid var(--line);
+  border-radius: 22px;
+  overflow: clip;
+}
+
+.choose-option__header {
+  align-items: center;
+  background: rgba(9, 13, 12, 0.28);
+  border: 0;
+  color: inherit;
+  cursor: pointer;
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+  padding: 1rem 1.05rem;
+  text-align: left;
+  width: 100%;
+}
+
+.choose-option__header:hover,
+.choose-option__header--open {
+  background: rgba(213, 195, 131, 0.12);
+}
+
+.choose-option__header strong,
+.choose-option__header span {
+  display: block;
+}
+
+.choose-option__header span:last-child,
+.choose-option__body .panel-copy {
+  color: var(--muted);
+}
+
+.choose-option__caret {
+  color: var(--accent);
+  flex: 0 0 auto;
+  font-size: 1rem;
+}
+
+.choose-option__body {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1rem;
+}
+
 .yaml-panel {
   background: rgba(7, 10, 9, 0.22);
   border: 1px solid var(--line);
