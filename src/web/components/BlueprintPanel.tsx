@@ -245,6 +245,7 @@ export function BlueprintPanel(props: BlueprintPanelProps) {
   } = props;
   const svgRef = useRef<SVGSVGElement | null>(null);
   const [dragState, setDragState] = useState<PointerDragState | null>(null);
+  const [layoutEditingEnabled, setLayoutEditingEnabled] = useState(false);
   const [imageSize, setImageSize] = useState<BlueprintImageSize | null>(
     selectedBlueprint.hasImage ? (blueprintImageSizeCache.get(selectedBlueprint.id) ?? null) : null
   );
@@ -286,6 +287,12 @@ export function BlueprintPanel(props: BlueprintPanelProps) {
       cancelled = true;
     };
   }, [selectedBlueprint.hasImage, selectedBlueprint.id]);
+
+  useEffect(() => {
+    if (!layoutEditingEnabled && dragState) {
+      finishDrag(dragState.pointerId);
+    }
+  }, [dragState, layoutEditingEnabled]);
 
   const verticalLines: number[] = [];
   const horizontalLines: number[] = [];
@@ -496,9 +503,9 @@ export function BlueprintPanel(props: BlueprintPanelProps) {
 
         <div className="blueprint-canvas-frame">
           <svg
-            className={`blueprint-canvas ${dragState ? "blueprint-canvas--dragging" : ""}`}
+            className={`blueprint-canvas ${layoutEditingEnabled ? "blueprint-canvas--editable" : "blueprint-canvas--locked"} ${dragState ? "blueprint-canvas--dragging" : ""}`}
             onPointerMove={(event) => {
-              if (!dragState || event.pointerId !== dragState.pointerId || !svgRef.current) {
+              if (!layoutEditingEnabled || !dragState || event.pointerId !== dragState.pointerId || !svgRef.current) {
                 return;
               }
               event.preventDefault();
@@ -571,11 +578,11 @@ export function BlueprintPanel(props: BlueprintPanelProps) {
                   key={`${selectedBlueprint.id}-${index}`}
                   onClick={() => onSelectButton(index)}
                   onPointerDown={(event) => {
-                    if (!svgRef.current) {
+                    onSelectButton(index);
+                    if (!layoutEditingEnabled || !svgRef.current) {
                       return;
                     }
                     event.preventDefault();
-                    onSelectButton(index);
                     const point = svgPoint(svgRef.current, event.clientX, event.clientY);
                     if (!point) {
                       return;
@@ -626,187 +633,203 @@ export function BlueprintPanel(props: BlueprintPanelProps) {
             <p className="eyebrow">Layout</p>
             <h3>Grid and alignment</h3>
           </div>
-          <span className="pill">Button {selectedButtonIndex + 1}</span>
+          <div className="inline-actions">
+            <span className="pill">Button {selectedButtonIndex + 1}</span>
+            <label className="toggle-field">
+              <span>Edit mode</span>
+              <button
+                className={`toggle ${layoutEditingEnabled ? "toggle--on" : ""}`}
+                onClick={() => setLayoutEditingEnabled((current) => !current)}
+                type="button"
+              >
+                <span />
+              </button>
+            </label>
+          </div>
         </div>
 
-        <div className="field-grid">
-          <label className="toggle-field">
-            <span>Grid overlay</span>
+        <fieldset className={`layout-tools__body ${layoutEditingEnabled ? "" : "layout-tools__body--locked"}`} disabled={!layoutEditingEnabled}>
+          <div className="field-grid">
+            <label className="toggle-field">
+              <span>Grid overlay</span>
+              <button
+                className={`toggle ${grid.enabled ? "toggle--on" : ""}`}
+                onClick={() => onGridChange({ enabled: !grid.enabled })}
+                type="button"
+              >
+                <span />
+              </button>
+            </label>
+
+            <label className="toggle-field">
+              <span>Snap to grid</span>
+              <button
+                className={`toggle ${grid.snap ? "toggle--on" : ""}`}
+                onClick={() => onGridChange({ snap: !grid.snap })}
+                type="button"
+              >
+                <span />
+              </button>
+            </label>
+
+            <label className="field">
+              <span>Grid width</span>
+              <input
+                min={8}
+                onChange={(event) => onGridChange({ cellWidth: Number(event.target.value) || 24 })}
+                type="number"
+                value={grid.cellWidth}
+              />
+            </label>
+
+            <label className="field">
+              <span>Grid height</span>
+              <input
+                min={8}
+                onChange={(event) => onGridChange({ cellHeight: Number(event.target.value) || 24 })}
+                type="number"
+                value={grid.cellHeight}
+              />
+            </label>
+
+            <label className="field">
+              <span>Grid offset X</span>
+              <input
+                onChange={(event) => onGridChange({ offsetX: Number(event.target.value) || 0 })}
+                type="number"
+                value={grid.offsetX}
+              />
+            </label>
+
+            <label className="field">
+              <span>Grid offset Y</span>
+              <input
+                onChange={(event) => onGridChange({ offsetY: Number(event.target.value) || 0 })}
+                type="number"
+                value={grid.offsetY}
+              />
+            </label>
+          </div>
+
+          <div className="field-grid">
+            <label className="field">
+              <span>Shape</span>
+              <select
+                onChange={(event) =>
+                  applyOverride(selectedButtonIndex, {
+                    ...selectedSeed,
+                    shape: event.target.value === "circle" ? "circle" : "rect"
+                  })
+                }
+                value={selectedSeed.shape}
+              >
+                <option value="rect">Rectangle</option>
+                <option value="circle">Circle</option>
+              </select>
+            </label>
+
+            <label className="field">
+              <span>X</span>
+              <input
+                onChange={(event) =>
+                  applyOverride(selectedButtonIndex, {
+                    ...selectedSeed,
+                    x: Number(event.target.value) || 0
+                  })
+                }
+                type="number"
+                value={Math.round(selectedSeed.x)}
+              />
+            </label>
+
+            <label className="field">
+              <span>Y</span>
+              <input
+                onChange={(event) =>
+                  applyOverride(selectedButtonIndex, {
+                    ...selectedSeed,
+                    y: Number(event.target.value) || 0
+                  })
+                }
+                type="number"
+                value={Math.round(selectedSeed.y)}
+              />
+            </label>
+
+            <label className="field">
+              <span>Width</span>
+              <input
+                min={12}
+                onChange={(event) =>
+                  applyOverride(selectedButtonIndex, {
+                    ...selectedSeed,
+                    width: Number(event.target.value) || 12
+                  })
+                }
+                type="number"
+                value={Math.round(selectedSeed.width)}
+              />
+            </label>
+
+            <label className="field">
+              <span>Height</span>
+              <input
+                min={12}
+                onChange={(event) =>
+                  applyOverride(selectedButtonIndex, {
+                    ...selectedSeed,
+                    height: Number(event.target.value) || 12
+                  })
+                }
+                type="number"
+                value={Math.round(selectedSeed.height)}
+              />
+            </label>
+          </div>
+
+          <div className="inline-actions">
             <button
-              className={`toggle ${grid.enabled ? "toggle--on" : ""}`}
-              onClick={() => onGridChange({ enabled: !grid.enabled })}
+              className="button"
+              onClick={() => applyOverride(selectedButtonIndex, snapOverrideToGrid(selectedSeed, grid))}
               type="button"
             >
-              <span />
+              Snap selected
             </button>
-          </label>
-
-          <label className="toggle-field">
-            <span>Snap to grid</span>
             <button
-              className={`toggle ${grid.snap ? "toggle--on" : ""}`}
-              onClick={() => onGridChange({ snap: !grid.snap })}
+              className="button"
+              disabled={!selectedBlueprint.hasImage}
+              onClick={() => void autoDetectSelected()}
               type="button"
             >
-              <span />
+              Auto-detect selected
             </button>
-          </label>
-
-          <label className="field">
-            <span>Grid width</span>
-            <input
-              min={8}
-              onChange={(event) => onGridChange({ cellWidth: Number(event.target.value) || 24 })}
-              type="number"
-              value={grid.cellWidth}
-            />
-          </label>
-
-          <label className="field">
-            <span>Grid height</span>
-            <input
-              min={8}
-              onChange={(event) => onGridChange({ cellHeight: Number(event.target.value) || 24 })}
-              type="number"
-              value={grid.cellHeight}
-            />
-          </label>
-
-          <label className="field">
-            <span>Grid offset X</span>
-            <input
-              onChange={(event) => onGridChange({ offsetX: Number(event.target.value) || 0 })}
-              type="number"
-              value={grid.offsetX}
-            />
-          </label>
-
-          <label className="field">
-            <span>Grid offset Y</span>
-            <input
-              onChange={(event) => onGridChange({ offsetY: Number(event.target.value) || 0 })}
-              type="number"
-              value={grid.offsetY}
-            />
-          </label>
-        </div>
-
-        <div className="field-grid">
-          <label className="field">
-            <span>Shape</span>
-            <select
-              onChange={(event) =>
-                applyOverride(selectedButtonIndex, {
-                  ...selectedSeed,
-                  shape: event.target.value === "circle" ? "circle" : "rect"
-                })
-              }
-              value={selectedSeed.shape}
+            <button
+              className="button"
+              onClick={() => {
+                onButtonLayoutChange(selectedButtonIndex, null);
+                onNotify(`Reset layout for button ${selectedButtonIndex + 1}.`);
+              }}
+              type="button"
             >
-              <option value="rect">Rectangle</option>
-              <option value="circle">Circle</option>
-            </select>
-          </label>
-
-          <label className="field">
-            <span>X</span>
-            <input
-              onChange={(event) =>
-                applyOverride(selectedButtonIndex, {
-                  ...selectedSeed,
-                  x: Number(event.target.value) || 0
-                })
-              }
-              type="number"
-              value={Math.round(selectedSeed.x)}
-            />
-          </label>
-
-          <label className="field">
-            <span>Y</span>
-            <input
-              onChange={(event) =>
-                applyOverride(selectedButtonIndex, {
-                  ...selectedSeed,
-                  y: Number(event.target.value) || 0
-                })
-              }
-              type="number"
-              value={Math.round(selectedSeed.y)}
-            />
-          </label>
-
-          <label className="field">
-            <span>Width</span>
-            <input
-              min={12}
-              onChange={(event) =>
-                applyOverride(selectedButtonIndex, {
-                  ...selectedSeed,
-                  width: Number(event.target.value) || 12
-                })
-              }
-              type="number"
-              value={Math.round(selectedSeed.width)}
-            />
-          </label>
-
-          <label className="field">
-            <span>Height</span>
-            <input
-              min={12}
-              onChange={(event) =>
-                applyOverride(selectedButtonIndex, {
-                  ...selectedSeed,
-                  height: Number(event.target.value) || 12
-                })
-              }
-              type="number"
-              value={Math.round(selectedSeed.height)}
-            />
-          </label>
-        </div>
-
-        <div className="inline-actions">
-          <button
-            className="button"
-            onClick={() => applyOverride(selectedButtonIndex, snapOverrideToGrid(selectedSeed, grid))}
-            type="button"
-          >
-            Snap selected
-          </button>
-          <button
-            className="button"
-            disabled={!selectedBlueprint.hasImage}
-            onClick={() => void autoDetectSelected()}
-            type="button"
-          >
-            Auto-detect selected
-          </button>
-          <button
-            className="button"
-            onClick={() => {
-              onButtonLayoutChange(selectedButtonIndex, null);
-              onNotify(`Reset layout for button ${selectedButtonIndex + 1}.`);
-            }}
-            type="button"
-          >
-            Reset selected
-          </button>
-          <button
-            className="button"
-            onClick={() => {
-              selectedBlueprint.buttons.forEach((_, index) => onButtonLayoutChange(index, null));
-              onNotify("Reset all button layout overrides.");
-            }}
-            type="button"
-          >
-            Reset all
-          </button>
-        </div>
+              Reset selected
+            </button>
+            <button
+              className="button"
+              onClick={() => {
+                selectedBlueprint.buttons.forEach((_, index) => onButtonLayoutChange(index, null));
+                onNotify("Reset all button layout overrides.");
+              }}
+              type="button"
+            >
+              Reset all
+            </button>
+          </div>
+        </fieldset>
 
         <p className="panel-copy">
-          Drag the selected button on the canvas to reposition it. Grid lines default off, snapping uses the configured cell width and height, and auto-detect only applies when the image scan finds a credible outline near the current button bounds.
+          {layoutEditingEnabled
+            ? "Layout editing is on. Drag the selected button or use the controls below to adjust its bounds."
+            : "Layout editing is off. Select buttons safely, then enable edit mode when you want to move or resize them."}
         </p>
       </div>
     </section>
