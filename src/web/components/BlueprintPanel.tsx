@@ -35,7 +35,7 @@ interface BlueprintPanelProps {
   onGridChange: (grid: Partial<SwitchManagerGridSettings>) => void;
   onIdentifierChange: (value: string) => void;
   onNameChange: (value: string) => void;
-  onNotify: (message: string) => void;
+  onNotify: (notice: { kind: "error" | "success"; text: string }) => void;
   onRotateChange: (value: number) => void;
   onSelectButton: (index: number) => void;
   selectedAreaId: string | null;
@@ -531,9 +531,15 @@ export function BlueprintPanel(props: BlueprintPanelProps) {
       }
 
       applyOverride(selectedButtonIndex, next);
-      onNotify(`Auto-detected an outline for button ${selectedButtonIndex + 1}.`);
+      onNotify({
+        kind: "success",
+        text: `Auto-detected an outline for button ${selectedButtonIndex + 1}.`
+      });
     } catch (error) {
-      onNotify(error instanceof Error ? error.message : "Auto-detect failed for this button.");
+      onNotify({
+        kind: "error",
+        text: error instanceof Error ? error.message : "Auto-detect failed for this button."
+      });
     }
   }
 
@@ -549,11 +555,15 @@ export function BlueprintPanel(props: BlueprintPanelProps) {
       setImageStatus(status);
       setImageRevision((current) => current + 1);
       setLayoutEditingEnabled(true);
-      onNotify(
-        `Imported ${file.name} as PNG${status.width && status.height ? ` (${status.width}x${status.height})` : ""}.`
-      );
+      onNotify({
+        kind: "success",
+        text: `Imported ${file.name} as PNG${status.width && status.height ? ` (${status.width}x${status.height})` : ""}.`
+      });
     } catch (error) {
-      onNotify(error instanceof Error ? error.message : "Blueprint image import failed.");
+      onNotify({
+        kind: "error",
+        text: error instanceof Error ? error.message : "Blueprint image import failed."
+      });
     } finally {
       setImageBusy(false);
       if (fileInputRef.current) {
@@ -568,9 +578,17 @@ export function BlueprintPanel(props: BlueprintPanelProps) {
       const status = await deleteBlueprintImageOverride(selectedBlueprint.id);
       setImageStatus(status);
       setImageRevision((current) => current + 1);
-      onNotify(status.hasImage ? "Removed the custom blueprint image." : "Removed the custom blueprint image. No image remains for this blueprint.");
+      onNotify({
+        kind: "success",
+        text: status.hasImage
+          ? "Removed the custom blueprint image."
+          : "Removed the custom blueprint image. No image remains for this blueprint."
+      });
     } catch (error) {
-      onNotify(error instanceof Error ? error.message : "Blueprint image reset failed.");
+      onNotify({
+        kind: "error",
+        text: error instanceof Error ? error.message : "Blueprint image reset failed."
+      });
     } finally {
       setImageBusy(false);
     }
@@ -1011,7 +1029,10 @@ export function BlueprintPanel(props: BlueprintPanelProps) {
               className="button"
               onClick={() => {
                 onButtonLayoutChange(selectedButtonIndex, null);
-                onNotify(`Reset layout for button ${selectedButtonIndex + 1}.`);
+                onNotify({
+                  kind: "success",
+                  text: `Reset layout for button ${selectedButtonIndex + 1}.`
+                });
               }}
               type="button"
             >
@@ -1021,7 +1042,10 @@ export function BlueprintPanel(props: BlueprintPanelProps) {
               className="button"
               onClick={() => {
                 selectedBlueprint.buttons.forEach((_, index) => onButtonLayoutChange(index, null));
-                onNotify("Reset all button layout overrides.");
+                onNotify({
+                  kind: "success",
+                  text: "Reset all button layout overrides."
+                });
               }}
               type="button"
             >

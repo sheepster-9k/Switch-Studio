@@ -54,6 +54,7 @@ import type {
 
 type AutomationTarget = "native" | "virtual";
 type WorkspaceMode = "editor" | "virtual" | "teach" | "automations" | "discovery";
+type NoticeState = { kind: "error" | "success"; text: string };
 
 const WORKSPACE_OPTIONS: Array<{
   description: string;
@@ -117,8 +118,8 @@ export function App() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [exportingPackage, setExportingPackage] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
-  const [fatalError, setFatalError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<NoticeState | null>(null);
+  const [blockingError, setBlockingError] = useState<string | null>(null);
   const [activeWorkspace, setActiveWorkspace] = useState<WorkspaceMode>("editor");
   const authenticated = Boolean(authStatus?.authenticated);
 
@@ -153,7 +154,27 @@ export function App() {
       setAutomationTarget("native");
       setActiveWorkspace("editor");
       setConfigSearch("");
+      setNotice(null);
     });
+  }
+
+  function errorMessage(error: unknown): string {
+    return error instanceof Error ? error.message : String(error);
+  }
+
+  function showActionError(error: unknown): void {
+    if (isAuthError(error)) {
+      return;
+    }
+    setNotice({
+      kind: "error",
+      text: errorMessage(error)
+    });
+  }
+
+  function closeAuthDialog(): void {
+    setAuthDialogOpen(false);
+    setAuthError(null);
   }
 
   useEffect(() => {
@@ -165,10 +186,9 @@ export function App() {
       resetStudioState();
       setAuthBusy(false);
       setAuthChecking(false);
-      setAuthDialogOpen(false);
+      closeAuthDialog();
       setAuthError("Session expired. Enter a Home Assistant token again.");
-      setFatalError(null);
-      setMessage(null);
+      setBlockingError(null);
       setLoading(false);
       setAuthStatus((current) => ({
         authenticated: false,
@@ -200,7 +220,7 @@ export function App() {
   async function loadAuthState(preferredConfigId?: string): Promise<void> {
     setAuthChecking(true);
     setAuthError(null);
-    setFatalError(null);
+    setBlockingError(null);
     try {
       const nextStatus = await fetchAuthStatus();
       setAuthStatus(nextStatus);
@@ -213,15 +233,21 @@ export function App() {
     } catch (error) {
       resetStudioState();
       setLoading(false);
-      setFatalError(error instanceof Error ? error.message : String(error));
+      setBlockingError(errorMessage(error));
     } finally {
       setAuthChecking(false);
     }
   }
 
-  async function loadStudio(preferredConfigId?: string): Promise<void> {
+  async function loadStudio(
+    preferredConfigId?: string,
+    options: { blocking?: boolean } = {}
+  ): Promise<boolean> {
+    const blocking = options.blocking ?? true;
     setLoading(true);
-    setFatalError(null);
+    if (blocking) {
+      setBlockingError(null);
+    }
     try {
       const [nextHealth, nextSnapshot, discoveryResult, automationsResult, learningResult] = await Promise.all([
         fetchHealth(),
@@ -259,11 +285,17 @@ export function App() {
         setSelectedStepIndex(0);
         setSelectedVirtualPressCount(2);
       });
+      return true;
     } catch (error) {
       if (isAuthError(error)) {
-        return;
+        return false;
       }
-      setFatalError(error instanceof Error ? error.message : String(error));
+      if (blocking) {
+        setBlockingError(errorMessage(error));
+      } else {
+        showActionError(error);
+      }
+      return false;
     } finally {
       setLoading(false);
     }
@@ -280,14 +312,14 @@ export function App() {
   async function handleAuthSubmit(credentials: { accessToken: string; haBaseUrl: string }): Promise<void> {
     setAuthBusy(true);
     setAuthError(null);
-    setFatalError(null);
+    setBlockingError(null);
     try {
       const nextStatus = await createAuthSession(credentials);
       setAuthStatus(nextStatus);
-      setAuthDialogOpen(false);
+      closeAuthDialog();
       await loadStudio();
     } catch (error) {
-      setAuthError(error instanceof Error ? error.message : String(error));
+      setAuthError(errorMessage(error));
     } finally {
       setAuthBusy(false);
       setAuthChecking(false);
@@ -301,10 +333,10 @@ export function App() {
       const nextStatus = await clearAuthSession();
       resetStudioState();
       setAuthStatus(nextStatus);
-      setAuthDialogOpen(false);
+      closeAuthDialog();
       setLoading(false);
     } catch (error) {
-      setAuthError(error instanceof Error ? error.message : String(error));
+      setAuthError(errorMessage(error));
     } finally {
       setAuthBusy(false);
       setAuthChecking(false);
@@ -320,7 +352,7 @@ export function App() {
     setSelectedVirtualPressCount(2);
     setAutomationTarget("native");
     setProperties(null);
-    setMessage(null);
+    setNotice(null);
   }
 
   function handleWorkspaceChange(workspace: WorkspaceMode): void {
@@ -413,13 +445,18 @@ export function App() {
       return;
     }
     setSaving(true);
-    setMessage(null);
+    setNotice(null);
     try {
       const saved = await saveConfig(draft);
-      await loadStudio(saved.id);
-      setMessage("Configuration saved to Home Assistant.");
+      const reloaded = await loadStudio(saved.id, { blocking: false });
+      setNotice({
+        kind: reloaded ? "success" : "error",
+        text: reloaded
+          ? "Configuration saved to Home Assistant."
+          : "Configuration saved, but the studio refresh failed."
+      });
     } catch (error) {
-      setFatalError(error instanceof Error ? error.message : String(error));
+      showActionError(error);
     } finally {
       setSaving(false);
     }
@@ -437,10 +474,17 @@ export function App() {
     });
     try {
       await setConfigEnabled(draft.id, nextEnabled);
-      await loadStudio(draft.id);
-      setMessage(nextEnabled ? "Switch enabled." : "Switch disabled.");
+      const reloaded = await loadStudio(draft.id, { blocking: false });
+      setNotice({
+        kind: reloaded ? "success" : "error",
+        text: reloaded
+          ? nextEnabled
+            ? "Switch enabled."
+            : "Switch disabled."
+          : "The switch state changed, but the studio refresh failed."
+      });
     } catch (error) {
-      setFatalError(error instanceof Error ? error.message : String(error));
+      showActionError(error);
     }
   }
 
@@ -458,10 +502,13 @@ export function App() {
     }
     try {
       await deleteConfig(draft.id);
-      await loadStudio();
-      setMessage("Configuration deleted.");
+      const reloaded = await loadStudio(undefined, { blocking: false });
+      setNotice({
+        kind: reloaded ? "success" : "error",
+        text: reloaded ? "Configuration deleted." : "Configuration deleted, but the studio refresh failed."
+      });
     } catch (error) {
-      setFatalError(error instanceof Error ? error.message : String(error));
+      showActionError(error);
     }
   }
 
@@ -473,7 +520,7 @@ export function App() {
       setProperties(await fetchDeviceProperties(draft.deviceId));
       setPropertyDrawerOpen(true);
     } catch (error) {
-      setFatalError(error instanceof Error ? error.message : String(error));
+      showActionError(error);
     }
   }
 
@@ -483,9 +530,9 @@ export function App() {
       if (draft?.deviceId) {
         setProperties(await fetchDeviceProperties(draft.deviceId));
       }
-      setMessage(`Updated ${entityId}.`);
+      setNotice({ kind: "success", text: `Updated ${entityId}.` });
     } catch (error) {
-      setFatalError(error instanceof Error ? error.message : String(error));
+      showActionError(error);
     }
   }
 
@@ -501,9 +548,9 @@ export function App() {
         label: draft.name
       });
       await refreshLearning();
-      setMessage("Learn session started.");
+      setNotice({ kind: "success", text: "Learn session started." });
     } catch (error) {
-      setFatalError(error instanceof Error ? error.message : String(error));
+      showActionError(error);
     }
   }
 
@@ -511,9 +558,9 @@ export function App() {
     try {
       await stopLearningSession();
       await refreshLearning();
-      setMessage("Learn session stopped.");
+      setNotice({ kind: "success", text: "Learn session stopped." });
     } catch (error) {
-      setFatalError(error instanceof Error ? error.message : String(error));
+      showActionError(error);
     }
   }
 
@@ -521,15 +568,18 @@ export function App() {
     try {
       await clearLearningLibrary();
       await refreshLearning();
-      setMessage("Learned events cleared.");
+      setNotice({ kind: "success", text: "Learned events cleared." });
     } catch (error) {
-      setFatalError(error instanceof Error ? error.message : String(error));
+      showActionError(error);
     }
   }
 
   async function handleExportCurrent(): Promise<void> {
     if (!draft?.id) {
-      setMessage("Save the config before exporting it to Home Assistant automations.");
+      setNotice({
+        kind: "error",
+        text: "Save the config before exporting it to Home Assistant automations."
+      });
       return;
     }
 
@@ -551,9 +601,9 @@ export function App() {
         });
       }
       setAutomations(await fetchAutomations());
-      setMessage("Exported the current slot to Home Assistant automations.");
+      setNotice({ kind: "success", text: "Exported the current slot to Home Assistant automations." });
     } catch (error) {
-      setFatalError(error instanceof Error ? error.message : String(error));
+      showActionError(error);
     }
   }
 
@@ -565,9 +615,9 @@ export function App() {
     try {
       setExportingPackage(true);
       const fileName = await exportBlueprintPackage(draft);
-      setMessage(`Downloaded ${fileName}.`);
+      setNotice({ kind: "success", text: `Downloaded ${fileName}.` });
     } catch (error) {
-      setFatalError(error instanceof Error ? error.message : String(error));
+      showActionError(error);
     } finally {
       setExportingPackage(false);
     }
@@ -578,7 +628,10 @@ export function App() {
       return;
     }
     if (!automation.actions.length) {
-      setMessage(`"${automation.alias}" does not expose an importable native action sequence yet.`);
+      setNotice({
+        kind: "error",
+        text: `"${automation.alias}" does not expose an importable native action sequence yet.`
+      });
       return;
     }
     updateDraft((nextDraft) => {
@@ -606,7 +659,12 @@ export function App() {
         action.sequence = automation.actions.map((step) => cloneStep(step));
       }
     });
-    setMessage(`Imported ${automation.alias} into ${automationTarget === "virtual" ? `press ${selectedVirtualPressCount}x` : "the selected action"}.`);
+    setNotice({
+      kind: "success",
+      text: `Imported ${automation.alias} into ${
+        automationTarget === "virtual" ? `press ${selectedVirtualPressCount}x` : "the selected action"
+      }.`
+    });
   }
 
   const filteredConfigs = snapshot?.configs.filter((config) => {
@@ -636,7 +694,7 @@ export function App() {
       <AuthPanel
         blocking
         busy={authBusy}
-        error={authError ?? fatalError}
+        error={authError ?? blockingError}
         onSubmit={(credentials) => void handleAuthSubmit(credentials)}
         open
         status={authStatus}
@@ -683,7 +741,7 @@ export function App() {
         }
         onIdentifierChange={(value) => updateDraft((nextDraft) => void (nextDraft.identifier = value))}
         onNameChange={(value) => updateDraft((nextDraft) => void (nextDraft.name = value))}
-        onNotify={setMessage}
+        onNotify={setNotice}
         onRotateChange={(value) => updateDraft((nextDraft) => void (nextDraft.rotate = value))}
         onSelectButton={onSelectButton}
         selectedAreaId={selectedAreaId}
@@ -751,8 +809,12 @@ export function App() {
         </header>
 
         {loading ? <section className="panel loading-panel">Loading studio snapshot...</section> : null}
-        {fatalError ? <section className="panel error-panel">{fatalError}</section> : null}
-        {message ? <section className="panel notice-panel">{message}</section> : null}
+        {blockingError ? <section className="panel error-panel">{blockingError}</section> : null}
+        {notice ? (
+          <section className={`panel ${notice.kind === "error" ? "error-panel" : "notice-panel"}`}>
+            {notice.text}
+          </section>
+        ) : null}
 
         <section className="panel workspace-switcher">
           <div className="workspace-switcher__header">
@@ -790,7 +852,7 @@ export function App() {
           </div>
         </section>
 
-        {!loading && !fatalError ? (
+        {!loading && !blockingError ? (
           <>
             {activeWorkspace === "editor" ? (
               <div className="workspace-grid">
@@ -937,7 +999,7 @@ export function App() {
                   setSelectedVirtualPressCount(2);
                   setAutomationTarget("native");
                   setActiveWorkspace("editor");
-                  setMessage(`Created a draft for ${candidate.name}.`);
+                  setNotice({ kind: "success", text: `Created a draft for ${candidate.name}.` });
                 }}
               />
             ) : null}
@@ -955,7 +1017,7 @@ export function App() {
       <AuthPanel
         busy={authBusy}
         error={authError}
-        onClose={() => setAuthDialogOpen(false)}
+        onClose={closeAuthDialog}
         onSubmit={(credentials) => void handleAuthSubmit(credentials)}
         open={authDialogOpen}
         status={authStatus}
