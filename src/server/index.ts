@@ -1,5 +1,5 @@
 import { constants } from "node:fs";
-import { access, readFile } from "node:fs/promises";
+import { access, mkdir, readFile, unlink, writeFile } from "node:fs/promises";
 import { basename, dirname, extname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { gzipSync } from "node:zlib";
@@ -11,6 +11,7 @@ import { stringify as stringifyYaml } from "yaml";
 import type {
   AutomationSummary,
   AreaSummary,
+  BlueprintImageStatus,
   DevicePropertiesResponse,
   DeviceSummary,
   DiscoveryCandidate,
@@ -686,9 +687,14 @@ async function loadBlueprintImageBuffer(
   config: StudioConfig,
   wsClient: HomeAssistantClient
 ): Promise<Buffer | null> {
-  const localImage = await serveLocalBlueprintImage(config.blueprintImageDir, blueprintId);
-  if (localImage) {
-    return localImage;
+  const overrideImage = await serveLocalBlueprintImage(config.blueprintImageOverrideDir, blueprintId);
+  if (overrideImage) {
+    return overrideImage;
+  }
+
+  const bundledImage = await serveLocalBlueprintImage(config.blueprintImageDir, blueprintId);
+  if (bundledImage) {
+    return bundledImage;
   }
 
   if (!wsClient.hasToken) {
@@ -703,19 +709,102 @@ async function loadBlueprintImageBuffer(
   return Buffer.from(await response.arrayBuffer());
 }
 
-function readPngDimensions(buffer: Buffer): { height: number; width: number } | null {
-  if (buffer.length < 24) {
-    return null;
-  }
-
+function isPngBuffer(buffer: Buffer): boolean {
   const signature = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
-  if (!signature.every((value, index) => buffer[index] === value)) {
+  return buffer.length >= signature.length && signature.every((value, index) => buffer[index] === value);
+}
+
+function readPngDimensions(buffer: Buffer): { height: number; width: number } | null {
+  if (buffer.length < 24 || !isPngBuffer(buffer)) {
     return null;
   }
 
   return {
     width: buffer.readUInt32BE(16),
     height: buffer.readUInt32BE(20)
+  };
+}
+
+function blueprintImagePath(root: string, blueprintId: string): string | null {
+  const safeBlueprintId = sanitizeBlueprintId(blueprintId);
+  return safeBlueprintId ? resolve(root, `${safeBlueprintId}.png`) : null;
+}
+
+async function saveBlueprintImageOverride(
+  overrideRoot: string,
+  blueprintId: string,
+  imageBuffer: Buffer
+): Promise<void> {
+  const imagePath = blueprintImagePath(overrideRoot, blueprintId);
+  if (!imagePath) {
+    throw new Error("Blueprint id is invalid");
+  }
+  if (!isPngBuffer(imageBuffer)) {
+    throw new Error("Uploaded image must already be PNG formatted");
+  }
+
+  await mkdir(overrideRoot, { recursive: true });
+  await writeFile(imagePath, imageBuffer);
+}
+
+async function removeBlueprintImageOverride(overrideRoot: string, blueprintId: string): Promise<void> {
+  const imagePath = blueprintImagePath(overrideRoot, blueprintId);
+  if (!imagePath || !(await fileExists(imagePath))) {
+    return;
+  }
+  await unlink(imagePath);
+}
+
+async function loadBlueprintImageStatus(
+  blueprintId: string,
+  config: StudioConfig,
+  wsClient: HomeAssistantClient
+): Promise<BlueprintImageStatus> {
+  const overrideBuffer = await serveLocalBlueprintImage(config.blueprintImageOverrideDir, blueprintId);
+  if (overrideBuffer) {
+    const dimensions = readPngDimensions(overrideBuffer);
+    return {
+      blueprintId,
+      hasImage: true,
+      hasOverride: true,
+      width: dimensions?.width ?? null,
+      height: dimensions?.height ?? null
+    };
+  }
+
+  const bundledBuffer = await serveLocalBlueprintImage(config.blueprintImageDir, blueprintId);
+  if (bundledBuffer) {
+    const dimensions = readPngDimensions(bundledBuffer);
+    return {
+      blueprintId,
+      hasImage: true,
+      hasOverride: false,
+      width: dimensions?.width ?? null,
+      height: dimensions?.height ?? null
+    };
+  }
+
+  if (wsClient.hasToken) {
+    const response = await wsClient.fetch(`/assets/switch_manager/${encodeURIComponent(blueprintId)}.png`);
+    if (response.ok) {
+      const buffer = Buffer.from(await response.arrayBuffer());
+      const dimensions = readPngDimensions(buffer);
+      return {
+        blueprintId,
+        hasImage: true,
+        hasOverride: false,
+        width: dimensions?.width ?? null,
+        height: dimensions?.height ?? null
+      };
+    }
+  }
+
+  return {
+    blueprintId,
+    hasImage: false,
+    hasOverride: false,
+    width: null,
+    height: null
   };
 }
 
@@ -2023,6 +2112,61 @@ async function main(): Promise<void> {
     }
   });
 
+  app.get("/api/blueprints/:id/image-status", async (request, reply) => {
+    const params = request.params as { id: string };
+
+    try {
+      return await loadBlueprintImageStatus(params.id, config, wsClient);
+    } catch (error) {
+      request.log.error(error);
+      reply.code(400);
+      return { error: error instanceof Error ? error.message : String(error) };
+    }
+  });
+
+  app.post("/api/blueprints/:id/image-override", async (request, reply) => {
+    const params = request.params as { id: string };
+    const body = request.body as { imageBase64?: unknown; sourceFileName?: unknown } | undefined;
+    if (typeof body?.imageBase64 !== "string" || !body.imageBase64.trim()) {
+      reply.code(400);
+      return { error: "imageBase64 is required" };
+    }
+
+    try {
+      const buffer = Buffer.from(body.imageBase64, "base64");
+      if (!buffer.length) {
+        throw new Error("Uploaded image content was empty");
+      }
+      if (!isPngBuffer(buffer)) {
+        throw new Error("Uploaded image must be converted to PNG before it reaches the server");
+      }
+
+      await saveBlueprintImageOverride(config.blueprintImageOverrideDir, params.id, buffer);
+      const status = await loadBlueprintImageStatus(params.id, config, wsClient);
+      return {
+        ...status,
+        sourceFileName: typeof body.sourceFileName === "string" ? body.sourceFileName : null
+      };
+    } catch (error) {
+      request.log.error(error);
+      reply.code(400);
+      return { error: error instanceof Error ? error.message : String(error) };
+    }
+  });
+
+  app.delete("/api/blueprints/:id/image-override", async (request, reply) => {
+    const params = request.params as { id: string };
+
+    try {
+      await removeBlueprintImageOverride(config.blueprintImageOverrideDir, params.id);
+      return await loadBlueprintImageStatus(params.id, config, wsClient);
+    } catch (error) {
+      request.log.error(error);
+      reply.code(400);
+      return { error: error instanceof Error ? error.message : String(error) };
+    }
+  });
+
   app.post("/api/blueprints/export-package", async (request, reply) => {
     const backend = preferredBackend(agentClient, wsClient);
     if (backend === "none") {
@@ -2300,10 +2444,17 @@ async function main(): Promise<void> {
 
   app.get("/api/blueprints/:id/image", async (request, reply) => {
     const params = request.params as { id: string };
+    const overrideImage = await serveLocalBlueprintImage(config.blueprintImageOverrideDir, params.id);
+    if (overrideImage) {
+      reply.header("Content-Type", "image/png");
+      reply.header("Cache-Control", "no-store");
+      return overrideImage;
+    }
+
     const localImage = await serveLocalBlueprintImage(config.blueprintImageDir, params.id);
     if (localImage) {
       reply.header("Content-Type", "image/png");
-      reply.header("Cache-Control", "public, max-age=300");
+      reply.header("Cache-Control", "no-store");
       return localImage;
     }
 
@@ -2311,7 +2462,7 @@ async function main(): Promise<void> {
       const response = await wsClient.fetch(`/assets/switch_manager/${encodeURIComponent(params.id)}.png`);
       if (response.ok) {
         reply.header("Content-Type", response.headers.get("content-type") ?? "image/png");
-        reply.header("Cache-Control", "public, max-age=300");
+        reply.header("Cache-Control", "no-store");
         return Buffer.from(await response.arrayBuffer());
       }
     }

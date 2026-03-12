@@ -36,9 +36,12 @@ Optional paths:
 SWITCH_MANAGER_STORE_PATH=.storage/switch_manager
 SWITCH_MANAGER_BLUEPRINT_DIR=blueprints/switch_manager
 SWITCH_MANAGER_BLUEPRINT_IMAGE_DIR=/opt/switch-manager-studio/data/blueprints
+SWITCH_MANAGER_BLUEPRINT_OVERRIDE_IMAGE_DIR=/opt/switch-manager-studio/data/blueprints-overrides
 ```
 
 `SWITCH_MANAGER_BLUEPRINT_IMAGE_DIR` should contain the switch-manager blueprint `.png` files. The backend serves those locally while the blueprint YAML data comes from Home Assistant through the agent.
+
+`SWITCH_MANAGER_BLUEPRINT_OVERRIDE_IMAGE_DIR` stores studio-managed image overrides created from the editor. The UI accepts PNG, JPG, WEBP, GIF, and SVG uploads, converts them to PNG, constrains them to the Switch Manager recommendation of 800px width or 500px height, and uses the result both in the editor canvas and exported blueprint packages.
 
 ## Development
 

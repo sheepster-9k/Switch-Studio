@@ -1,5 +1,6 @@
 import type {
   AutomationSummary,
+  BlueprintImageStatus,
   DevicePropertiesResponse,
   DiscoveryCandidate,
   HealthResponse,
@@ -16,6 +17,23 @@ async function parseResponse<T>(response: Response): Promise<T> {
     throw new Error(parsed.error ?? `Request failed with ${response.status}`);
   }
   return parsed;
+}
+
+async function blobToBase64(blob: Blob): Promise<string> {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result;
+      if (typeof result !== "string") {
+        reject(new Error("Could not read image data"));
+        return;
+      }
+      const [, base64 = ""] = result.split(",", 2);
+      resolve(base64);
+    };
+    reader.onerror = () => reject(reader.error ?? new Error("Could not read image data"));
+    reader.readAsDataURL(blob);
+  });
 }
 
 async function parseError(response: Response): Promise<Error> {
@@ -35,6 +53,12 @@ function downloadNameFromDisposition(value: string | null, fallback: string): st
 
 export async function fetchHealth(): Promise<HealthResponse> {
   return parseResponse<HealthResponse>(await fetch("/api/health"));
+}
+
+export async function fetchBlueprintImageStatus(blueprintId: string): Promise<BlueprintImageStatus> {
+  return parseResponse<BlueprintImageStatus>(
+    await fetch(`/api/blueprints/${encodeURIComponent(blueprintId)}/image-status`)
+  );
 }
 
 export async function fetchSnapshot(): Promise<StudioSnapshot> {
@@ -149,6 +173,32 @@ export async function exportBlueprintPackage(config: SwitchManagerConfig): Promi
   anchor.remove();
   window.setTimeout(() => URL.revokeObjectURL(url), 1000);
   return fileName;
+}
+
+export async function uploadBlueprintImageOverride(
+  blueprintId: string,
+  image: Blob,
+  sourceFileName: string
+): Promise<BlueprintImageStatus> {
+  const imageBase64 = await blobToBase64(image);
+  return parseResponse<BlueprintImageStatus>(
+    await fetch(`/api/blueprints/${encodeURIComponent(blueprintId)}/image-override`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        imageBase64,
+        sourceFileName
+      })
+    })
+  );
+}
+
+export async function deleteBlueprintImageOverride(blueprintId: string): Promise<BlueprintImageStatus> {
+  return parseResponse<BlueprintImageStatus>(
+    await fetch(`/api/blueprints/${encodeURIComponent(blueprintId)}/image-override`, {
+      method: "DELETE"
+    })
+  );
 }
 
 export async function saveConfig(config: SwitchManagerConfig): Promise<SwitchManagerConfig> {

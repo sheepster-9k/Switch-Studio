@@ -1,7 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 
+import {
+  deleteBlueprintImageOverride,
+  fetchBlueprintImageStatus,
+  uploadBlueprintImageOverride
+} from "../api";
 import type {
   AreaSummary,
+  BlueprintImageStatus,
   SwitchManagerBlueprint,
   SwitchManagerButtonLayoutOverride,
   SwitchManagerConfig,
@@ -58,6 +64,8 @@ interface BlueprintViewport {
 }
 
 const blueprintImageSizeCache = new Map<string, BlueprintImageSize>();
+const MAX_BLUEPRINT_IMAGE_WIDTH = 800;
+const MAX_BLUEPRINT_IMAGE_HEIGHT = 500;
 
 function editableSeed(
   blueprint: SwitchManagerBlueprint,
@@ -96,10 +104,10 @@ function svgPoint(svg: SVGSVGElement, clientX: number, clientY: number): { x: nu
   };
 }
 
-async function loadBlueprintImage(blueprintId: string): Promise<HTMLImageElement> {
+async function loadImageElement(src: string): Promise<HTMLImageElement> {
   const image = new Image();
   image.crossOrigin = "anonymous";
-  image.src = `/api/blueprints/${encodeURIComponent(blueprintId)}/image`;
+  image.src = src;
   await new Promise<void>((resolve, reject) => {
     image.onload = () => resolve();
     image.onerror = () => reject(new Error("Blueprint image could not be loaded"));
@@ -107,18 +115,89 @@ async function loadBlueprintImage(blueprintId: string): Promise<HTMLImageElement
   return image;
 }
 
-async function loadBlueprintImageSize(blueprintId: string): Promise<BlueprintImageSize> {
-  const cached = blueprintImageSizeCache.get(blueprintId);
+function blueprintImageUrl(blueprintId: string, revision = 0): string {
+  return `/api/blueprints/${encodeURIComponent(blueprintId)}/image?v=${revision}`;
+}
+
+async function loadBlueprintImage(blueprintId: string, revision = 0): Promise<HTMLImageElement> {
+  return loadImageElement(blueprintImageUrl(blueprintId, revision));
+}
+
+async function loadBlueprintImageSize(blueprintId: string, revision = 0): Promise<BlueprintImageSize> {
+  const cacheKey = `${blueprintId}:${revision}`;
+  const cached = blueprintImageSizeCache.get(cacheKey);
   if (cached) {
     return cached;
   }
-  const image = await loadBlueprintImage(blueprintId);
+  const image = await loadBlueprintImage(blueprintId, revision);
   const size = {
     width: image.naturalWidth,
     height: image.naturalHeight
   };
-  blueprintImageSizeCache.set(blueprintId, size);
+  blueprintImageSizeCache.set(cacheKey, size);
   return size;
+}
+
+async function readBlobAsDataUrl(blob: Blob): Promise<string> {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === "string") {
+        resolve(reader.result);
+        return;
+      }
+      reject(new Error("Image could not be read"));
+    };
+    reader.onerror = () => reject(reader.error ?? new Error("Image could not be read"));
+    reader.readAsDataURL(blob);
+  });
+}
+
+function fitImageInside(width: number, height: number): { height: number; width: number } {
+  if (width <= 0 || height <= 0) {
+    throw new Error("Image dimensions are invalid");
+  }
+
+  const scale = Math.min(1, MAX_BLUEPRINT_IMAGE_WIDTH / width, MAX_BLUEPRINT_IMAGE_HEIGHT / height);
+  return {
+    width: Math.max(1, Math.round(width * scale)),
+    height: Math.max(1, Math.round(height * scale))
+  };
+}
+
+async function convertUploadedImageToPng(file: File): Promise<Blob> {
+  const supportedMimeTypes = new Set([
+    "image/png",
+    "image/jpeg",
+    "image/webp",
+    "image/gif",
+    "image/svg+xml"
+  ]);
+  if (file.type && !supportedMimeTypes.has(file.type)) {
+    throw new Error("Use PNG, JPG, WEBP, GIF, or SVG images.");
+  }
+
+  const image = await loadImageElement(await readBlobAsDataUrl(file));
+  const naturalWidth = image.naturalWidth || image.width;
+  const naturalHeight = image.naturalHeight || image.height;
+  const size = fitImageInside(naturalWidth, naturalHeight);
+  const canvas = document.createElement("canvas");
+  canvas.width = size.width;
+  canvas.height = size.height;
+  const context = canvas.getContext("2d");
+  if (!context) {
+    throw new Error("Canvas context is unavailable");
+  }
+  context.clearRect(0, 0, canvas.width, canvas.height);
+  context.drawImage(image, 0, 0, canvas.width, canvas.height);
+
+  const blob = await new Promise<Blob | null>((resolve) => {
+    canvas.toBlob((nextBlob) => resolve(nextBlob), "image/png");
+  });
+  if (!blob) {
+    throw new Error("Image conversion failed");
+  }
+  return blob;
 }
 
 function clamp(value: number, min: number, max: number): number {
@@ -248,11 +327,13 @@ export function BlueprintPanel(props: BlueprintPanelProps) {
     selectedButtonIndex
   } = props;
   const svgRef = useRef<SVGSVGElement | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [dragState, setDragState] = useState<PointerDragState | null>(null);
   const [layoutEditingEnabled, setLayoutEditingEnabled] = useState(false);
-  const [imageSize, setImageSize] = useState<BlueprintImageSize | null>(
-    selectedBlueprint.hasImage ? (blueprintImageSizeCache.get(selectedBlueprint.id) ?? null) : null
-  );
+  const [imageStatus, setImageStatus] = useState<BlueprintImageStatus | null>(null);
+  const [imageRevision, setImageRevision] = useState(0);
+  const [imageBusy, setImageBusy] = useState(false);
+  const [imageSize, setImageSize] = useState<BlueprintImageSize | null>(null);
   const layout = getLayoutMetadata(draft, selectedBlueprint.buttons.length);
   const overrides = layout.buttonOverrides;
   const grid = layout.grid;
@@ -261,42 +342,77 @@ export function BlueprintPanel(props: BlueprintPanelProps) {
   const { minX: viewMinX, minY: viewMinY, width: viewWidth, height: viewHeight } = viewport;
   const selectedOverride = overrides[selectedButtonIndex] ?? null;
   const selectedSeed = editableSeed(selectedBlueprint, selectedButtonIndex, selectedOverride);
+  const imageAvailable = Boolean(imageStatus?.hasImage && imageSize);
+  const imageSrc = blueprintImageUrl(selectedBlueprint.id, imageRevision);
 
   useEffect(() => {
     let cancelled = false;
+    setImageStatus(null);
+    setImageSize(null);
 
-    if (!selectedBlueprint.hasImage) {
-      setImageSize(null);
-      return () => {
-        cancelled = true;
-      };
-    }
-
-    const cached = blueprintImageSizeCache.get(selectedBlueprint.id) ?? null;
-    setImageSize(cached);
-
-    void loadBlueprintImageSize(selectedBlueprint.id)
-      .then((nextSize) => {
-        if (!cancelled) {
-          setImageSize(nextSize);
+    void fetchBlueprintImageStatus(selectedBlueprint.id)
+      .then((status) => {
+        if (cancelled) {
+          return;
         }
+        setImageStatus(status);
+        if (!status.hasImage) {
+          setImageSize(null);
+          return;
+        }
+
+        const cacheKey = `${selectedBlueprint.id}:${imageRevision}`;
+        const cached = blueprintImageSizeCache.get(cacheKey) ?? null;
+        setImageSize(cached);
+
+        void loadBlueprintImageSize(selectedBlueprint.id, imageRevision)
+          .then((nextSize) => {
+            if (!cancelled) {
+              setImageSize(nextSize);
+            }
+          })
+          .catch(() => {
+            if (!cancelled) {
+              setImageSize(null);
+              setImageStatus((current) =>
+                current
+                  ? {
+                      ...current,
+                      hasImage: false,
+                      width: null,
+                      height: null
+                    }
+                  : current
+              );
+            }
+          });
       })
       .catch(() => {
         if (!cancelled) {
-          setImageSize(null);
+          setImageStatus({
+            blueprintId: selectedBlueprint.id,
+            hasImage: false,
+            hasOverride: false,
+            width: null,
+            height: null
+          });
         }
       });
 
     return () => {
       cancelled = true;
     };
-  }, [selectedBlueprint.hasImage, selectedBlueprint.id]);
+  }, [imageRevision, selectedBlueprint.id]);
 
   useEffect(() => {
     if (!layoutEditingEnabled && dragState) {
       finishDrag(dragState.pointerId);
     }
   }, [dragState, layoutEditingEnabled]);
+
+  useEffect(() => {
+    setImageRevision(0);
+  }, [selectedBlueprint.id]);
 
   const verticalLines: number[] = [];
   const horizontalLines: number[] = [];
@@ -349,8 +465,11 @@ export function BlueprintPanel(props: BlueprintPanelProps) {
 
   async function autoDetectSelected(): Promise<void> {
     try {
+      if (!imageAvailable) {
+        throw new Error("Import a blueprint image before using auto-detect.");
+      }
       const seed = editableSeed(selectedBlueprint, selectedButtonIndex, selectedOverride);
-      const image = await loadBlueprintImage(selectedBlueprint.id);
+      const image = await loadBlueprintImage(selectedBlueprint.id, imageRevision);
       const canvas = document.createElement("canvas");
       canvas.width = image.naturalWidth;
       canvas.height = image.naturalHeight;
@@ -415,6 +534,45 @@ export function BlueprintPanel(props: BlueprintPanelProps) {
       onNotify(`Auto-detected an outline for button ${selectedButtonIndex + 1}.`);
     } catch (error) {
       onNotify(error instanceof Error ? error.message : "Auto-detect failed for this button.");
+    }
+  }
+
+  async function handleImportImage(file: File | null): Promise<void> {
+    if (!file) {
+      return;
+    }
+
+    try {
+      setImageBusy(true);
+      const pngBlob = await convertUploadedImageToPng(file);
+      const status = await uploadBlueprintImageOverride(selectedBlueprint.id, pngBlob, file.name);
+      setImageStatus(status);
+      setImageRevision((current) => current + 1);
+      setLayoutEditingEnabled(true);
+      onNotify(
+        `Imported ${file.name} as PNG${status.width && status.height ? ` (${status.width}x${status.height})` : ""}.`
+      );
+    } catch (error) {
+      onNotify(error instanceof Error ? error.message : "Blueprint image import failed.");
+    } finally {
+      setImageBusy(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
+    }
+  }
+
+  async function handleResetImage(): Promise<void> {
+    try {
+      setImageBusy(true);
+      const status = await deleteBlueprintImageOverride(selectedBlueprint.id);
+      setImageStatus(status);
+      setImageRevision((current) => current + 1);
+      onNotify(status.hasImage ? "Removed the custom blueprint image." : "Removed the custom blueprint image. No image remains for this blueprint.");
+    } catch (error) {
+      onNotify(error instanceof Error ? error.message : "Blueprint image reset failed.");
+    } finally {
+      setImageBusy(false);
     }
   }
 
@@ -504,9 +662,28 @@ export function BlueprintPanel(props: BlueprintPanelProps) {
           </div>
           <div className="inline-actions">
             <span className="pill">{selectedBlueprint.buttons.length} buttons</span>
+            <span className={`pill ${imageStatus?.hasOverride ? "" : "pill--muted"}`}>
+              {imageStatus?.hasOverride ? "Custom image" : imageAvailable ? "Image available" : "No image"}
+            </span>
             <button
               className="button button--ghost"
-              disabled={exportingPackage}
+              disabled={imageBusy}
+              onClick={() => fileInputRef.current?.click()}
+              type="button"
+            >
+              {imageBusy ? "Importing..." : "Import image"}
+            </button>
+            <button
+              className="button button--ghost"
+              disabled={imageBusy || !imageStatus?.hasOverride}
+              onClick={() => void handleResetImage()}
+              type="button"
+            >
+              Reset image
+            </button>
+            <button
+              className="button button--ghost"
+              disabled={exportingPackage || imageBusy}
               onClick={onExportPackage}
               type="button"
             >
@@ -514,6 +691,14 @@ export function BlueprintPanel(props: BlueprintPanelProps) {
             </button>
           </div>
         </div>
+
+        <input
+          accept=".png,.jpg,.jpeg,.webp,.gif,.svg,image/png,image/jpeg,image/webp,image/gif,image/svg+xml"
+          hidden
+          onChange={(event) => void handleImportImage(event.target.files?.[0] ?? null)}
+          ref={fileInputRef}
+          type="file"
+        />
 
         <div className="blueprint-canvas-frame">
           <svg
@@ -567,11 +752,11 @@ export function BlueprintPanel(props: BlueprintPanelProps) {
               </g>
             ) : null}
 
-            {selectedBlueprint.hasImage ? (
+            {imageAvailable ? (
               <image
                 draggable="false"
                 height={imageSize?.height ?? viewHeight}
-                href={`/api/blueprints/${encodeURIComponent(selectedBlueprint.id)}/image`}
+                href={imageSrc}
                 preserveAspectRatio="none"
                 width={imageSize?.width ?? viewWidth}
                 x={imageSize ? 0 : viewMinX}
@@ -639,6 +824,11 @@ export function BlueprintPanel(props: BlueprintPanelProps) {
             })}
           </svg>
         </div>
+        {!imageAvailable ? (
+          <p className="panel-copy">
+            Import PNG, JPG, WEBP, GIF, or SVG artwork for this blueprint. The studio converts uploads to PNG, keeps them within 800px wide or 500px high, and uses the result for editing and export.
+          </p>
+        ) : null}
       </div>
 
       <div className="layout-tools">
@@ -811,7 +1001,7 @@ export function BlueprintPanel(props: BlueprintPanelProps) {
             </button>
             <button
               className="button"
-              disabled={!selectedBlueprint.hasImage}
+              disabled={!imageAvailable}
               onClick={() => void autoDetectSelected()}
               type="button"
             >

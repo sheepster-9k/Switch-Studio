@@ -14,6 +14,7 @@ export interface StudioConfig {
   switchManagerBlueprintDir: string;
   automationsPath: string;
   blueprintImageDir: string;
+  blueprintImageOverrideDir: string;
 }
 
 function cleanBaseUrl(value: string): string {
@@ -70,6 +71,9 @@ export function loadConfig(): StudioConfig {
       process.env.SWITCH_MANAGER_BLUEPRINT_DIR ?? "blueprints/switch_manager"
     ),
     automationsPath: cleanConfigPath(process.env.AUTOMATIONS_PATH ?? "automations.yaml"),
-    blueprintImageDir: resolveDataPath(process.env.SWITCH_MANAGER_BLUEPRINT_IMAGE_DIR ?? "data/blueprints")
+    blueprintImageDir: resolveDataPath(process.env.SWITCH_MANAGER_BLUEPRINT_IMAGE_DIR ?? "data/blueprints"),
+    blueprintImageOverrideDir: resolveDataPath(
+      process.env.SWITCH_MANAGER_BLUEPRINT_OVERRIDE_IMAGE_DIR ?? "data/blueprints-overrides"
+    )
   };
 }

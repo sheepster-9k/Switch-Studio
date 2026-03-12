@@ -30,6 +30,14 @@ export interface SwitchManagerBlueprint {
   buttons: SwitchManagerBlueprintButton[];
 }
 
+export interface BlueprintImageStatus {
+  blueprintId: string;
+  hasImage: boolean;
+  hasOverride: boolean;
+  width: number | null;
+  height: number | null;
+}
+
 export interface SwitchManagerConfigAction {
   mode: string;
   sequence: SequenceStep[];
