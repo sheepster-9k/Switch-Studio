@@ -34,6 +34,7 @@ import { VirtualActionEditor } from "./components/VirtualActionEditor";
 import {
   cloneConfig,
   cloneStep,
+  createDraftFromBlueprint,
   createDraftFromDiscovery,
   ensureLayoutMetadata,
   ensureSwitchMetadata,
@@ -1005,6 +1006,21 @@ export function App() {
               <DiscoveryPanel
                 blueprintsById={blueprintsById}
                 candidates={discovery}
+                onUseBlueprint={(blueprintId) => {
+                  const blueprint = blueprintsById.get(blueprintId);
+                  if (!blueprint) {
+                    return;
+                  }
+                  setSelectedConfigId("");
+                  setDraft(createDraftFromBlueprint(blueprint));
+                  setSelectedButtonIndex(0);
+                  setSelectedActionIndex(0);
+                  setSelectedStepIndex(0);
+                  setSelectedVirtualPressCount(2);
+                  setAutomationTarget("native");
+                  setActiveWorkspace("editor");
+                  setNotice({ kind: "success", text: `Created a base config from ${blueprint.name}.` });
+                }}
                 onUseCandidate={(candidate, blueprintId) => {
                   const blueprint = blueprintsById.get(blueprintId);
                   if (!blueprint) {

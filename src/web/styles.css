@@ -724,6 +724,137 @@ textarea {
   gap: 0.7rem;
 }
 
+.discovery-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.discovery-layout {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: minmax(20rem, 0.9fr) minmax(22rem, 1.1fr);
+}
+
+.discovery-column {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  min-width: 0;
+}
+
+.discovery-column--list {
+  min-height: 0;
+}
+
+.discovery-column__head {
+  align-items: center;
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+}
+
+.discovery-column__head h4,
+.discovery-spawn-panel h4 {
+  margin: 0;
+}
+
+.discovery-list,
+.discovery-blueprint-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  min-height: 0;
+  overflow: auto;
+}
+
+.discovery-list {
+  max-height: 42rem;
+  padding-right: 0.15rem;
+}
+
+.discovery-candidate,
+.discovery-blueprint-card {
+  background: rgba(9, 13, 12, 0.34);
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  color: inherit;
+  cursor: pointer;
+  padding: 0.95rem 1rem;
+  text-align: left;
+  transition: transform 140ms ease, border-color 140ms ease, background 140ms ease;
+  width: 100%;
+}
+
+.discovery-candidate:hover,
+.discovery-blueprint-card:hover,
+.discovery-candidate--selected,
+.discovery-blueprint-card--selected {
+  background: rgba(213, 195, 131, 0.14);
+  border-color: var(--line-strong);
+  transform: translateY(-1px);
+}
+
+.discovery-summary {
+  margin: 0;
+}
+
+.discovery-blueprint-card {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: minmax(10rem, 12rem) minmax(0, 1fr);
+  overflow: hidden;
+  padding: 0;
+}
+
+.discovery-blueprint-card__preview {
+  align-items: center;
+  background:
+    radial-gradient(circle at top right, rgba(213, 195, 131, 0.18), transparent 45%),
+    linear-gradient(180deg, rgba(18, 24, 22, 0.96), rgba(10, 14, 13, 0.96));
+  border-right: 1px solid var(--line);
+  display: flex;
+  justify-content: center;
+  min-height: 12rem;
+  overflow: hidden;
+  padding: 1rem;
+}
+
+.discovery-blueprint-card__preview img {
+  display: block;
+  height: auto;
+  max-height: 10rem;
+  max-width: 100%;
+  object-fit: contain;
+  width: auto;
+}
+
+.discovery-blueprint-card__placeholder {
+  align-items: center;
+  border: 1px dashed var(--line);
+  border-radius: 18px;
+  color: var(--muted);
+  display: flex;
+  height: 100%;
+  justify-content: center;
+  min-height: 10rem;
+  width: 100%;
+}
+
+.discovery-blueprint-card__body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 1rem 1rem 1rem 0;
+}
+
+.discovery-spawn-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  margin-top: auto;
+}
+
 .action-tabs {
   grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
 }
@@ -1172,7 +1303,8 @@ textarea {
 
 @media (max-width: 1180px) {
   .studio-shell,
-  .workspace-grid {
+  .workspace-grid,
+  .discovery-layout {
     grid-template-columns: 1fr;
   }
 }
@@ -1194,6 +1326,7 @@ textarea {
 
   .hero-panel,
   .panel-head,
+  .discovery-column__head,
   .automation-sheet__header,
   .workspace-switcher__header,
   .step-editor__head,
@@ -1236,6 +1369,19 @@ textarea {
 
   .auth-token-row {
     grid-template-columns: 1fr;
+  }
+
+  .discovery-blueprint-card {
+    grid-template-columns: 1fr;
+  }
+
+  .discovery-blueprint-card__preview {
+    border-bottom: 1px solid var(--line);
+    border-right: 0;
+  }
+
+  .discovery-blueprint-card__body {
+    padding: 0 1rem 1rem;
   }
 }
 
