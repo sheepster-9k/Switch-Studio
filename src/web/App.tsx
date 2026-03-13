@@ -781,6 +781,7 @@ export function App() {
         onIdentifierChange={(value) => updateDraft((nextDraft) => void (nextDraft.identifier = value))}
         onNameChange={(value) => updateDraft((nextDraft) => void (nextDraft.name = value))}
         onNotify={setNotice}
+        onResetToSaved={selectedStoredConfig ? () => selectConfig(selectedStoredConfig) : null}
         onRotateChange={(value) => updateDraft((nextDraft) => void (nextDraft.rotate = value))}
         onSelectButton={onSelectButton}
         selectedAreaId={selectedAreaId}

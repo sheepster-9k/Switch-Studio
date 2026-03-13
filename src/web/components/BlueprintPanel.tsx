@@ -36,6 +36,7 @@ interface BlueprintPanelProps {
   onIdentifierChange: (value: string) => void;
   onNameChange: (value: string) => void;
   onNotify: (notice: { kind: "error" | "success"; text: string }) => void;
+  onResetToSaved: (() => void) | null;
   onRotateChange: (value: number) => void;
   onSelectButton: (index: number) => void;
   selectedAreaId: string | null;
@@ -320,6 +321,7 @@ export function BlueprintPanel(props: BlueprintPanelProps) {
     onIdentifierChange,
     onNameChange,
     onNotify,
+    onResetToSaved,
     onRotateChange,
     onSelectButton,
     selectedAreaId,
@@ -409,6 +411,19 @@ export function BlueprintPanel(props: BlueprintPanelProps) {
       finishDrag(dragState.pointerId);
     }
   }, [dragState, layoutEditingEnabled]);
+
+  // Prevent page scroll while dragging a button (non-passive so preventDefault works).
+  useEffect(() => {
+    if (!dragState || !svgRef.current) {
+      return;
+    }
+    const svg = svgRef.current;
+    const handler = (event: PointerEvent) => {
+      event.preventDefault();
+    };
+    svg.addEventListener("pointermove", handler, { passive: false });
+    return () => svg.removeEventListener("pointermove", handler);
+  }, [dragState]);
 
   useEffect(() => {
     setImageRevision(0);
@@ -601,13 +616,24 @@ export function BlueprintPanel(props: BlueprintPanelProps) {
           <p className="eyebrow">Config</p>
           <h3>Switch identity</h3>
         </div>
-        <button
-          className="button button--danger"
-          onClick={onDelete}
-          type="button"
-        >
-          Delete
-        </button>
+        <div className="inline-actions">
+          {onResetToSaved ? (
+            <button
+              className="button button--ghost"
+              onClick={onResetToSaved}
+              type="button"
+            >
+              Reset to saved
+            </button>
+          ) : null}
+          <button
+            className="button button--danger"
+            onClick={onDelete}
+            type="button"
+          >
+            Delete
+          </button>
+        </div>
       </div>
 
       <div className="field-grid">
