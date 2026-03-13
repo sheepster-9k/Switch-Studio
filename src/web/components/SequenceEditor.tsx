@@ -16,6 +16,7 @@ import {
   isRecord,
   matchesSearch,
   selectedTargetIds,
+  shouldDisplayStepAlias,
   stepTargetKind,
   summarizeStep,
   targetLabel,
@@ -532,6 +533,7 @@ function SequenceListEditor(props: SequenceListEditorProps) {
         {sequence.map((step, index) => {
           const kind = classifyStep(step);
           const alias = typeof step.alias === "string" ? step.alias.trim() : "";
+          const displayAlias = shouldDisplayStepAlias(step) ? alias : "";
           return (
             <div
               className={`sequence-item ${dropIndex === index ? "sequence-item--drop" : ""}`}
@@ -579,7 +581,7 @@ function SequenceListEditor(props: SequenceListEditorProps) {
                 <strong>{summarizeStep(step)}</strong>
                 <div className="sequence-card__meta">
                   <span className="pill pill--muted">{STEP_KIND_LABELS[kind]}</span>
-                  {alias ? <span className="muted-chip">{alias}</span> : null}
+                  {displayAlias ? <span className="muted-chip">{displayAlias}</span> : null}
                 </div>
               </button>
             </div>

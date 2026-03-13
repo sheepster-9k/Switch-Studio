@@ -57,6 +57,10 @@ export function compactTargetSelection(values: string[]): string | string[] | un
   return values;
 }
 
+function chooseOptionCount(step: SequenceStep): number {
+  return Array.isArray(step.choose) ? step.choose.length : 0;
+}
+
 export function summarizeStep(step: SequenceStep): string {
   if (typeof step.action === "string") {
     return step.action;
@@ -71,7 +75,11 @@ export function summarizeStep(step: SequenceStep): string {
     return "if / then / else";
   }
   if ("choose" in step) {
-    return "choose branch";
+    const optionCount = chooseOptionCount(step);
+    if (optionCount <= 1) {
+      return "choose an option";
+    }
+    return `choose between ${optionCount} options`;
   }
   if ("parallel" in step) {
     return "parallel";
@@ -101,6 +109,25 @@ export function summarizeStep(step: SequenceStep): string {
     return `${step.condition} condition`;
   }
   return Object.keys(step)[0] ?? "sequence step";
+}
+
+export function shouldDisplayStepAlias(step: SequenceStep): boolean {
+  const alias = typeof step.alias === "string" ? step.alias.trim() : "";
+  if (!alias) {
+    return false;
+  }
+
+  const normalizedAlias = alias.toLowerCase();
+  if (normalizedAlias === summarizeStep(step).toLowerCase()) {
+    return false;
+  }
+  if (normalizedAlias === "choose branch") {
+    return false;
+  }
+  if (/^branch \d+$/.test(normalizedAlias)) {
+    return false;
+  }
+  return true;
 }
 
 export function countActiveActions(config: SwitchManagerConfig): number {
