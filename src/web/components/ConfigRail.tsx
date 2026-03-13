@@ -10,6 +10,7 @@ import type {
 import { areaNameById, countActiveActions, countTotalActions, resolvedConfigAreaId } from "../helpers";
 
 interface ConfigRailProps {
+  activeWorkspace: "editor" | "virtual" | "teach" | "automations" | "discovery";
   authBusy: boolean;
   authStatus: AuthStatusResponse | null;
   blueprintsById: Map<string, SwitchManagerBlueprint>;
@@ -18,6 +19,7 @@ interface ConfigRailProps {
   health: HealthResponse | null;
   onConfigSearchChange: (value: string) => void;
   onOpenAuth: () => void;
+  onOpenDiscovery: () => void;
   onSelectConfig: (config: SwitchManagerConfig) => void;
   onSignOut: () => void;
   selectedConfigId: string;
@@ -26,6 +28,7 @@ interface ConfigRailProps {
 
 export function ConfigRail(props: ConfigRailProps) {
   const {
+    activeWorkspace,
     authBusy,
     authStatus,
     blueprintsById,
@@ -34,6 +37,7 @@ export function ConfigRail(props: ConfigRailProps) {
     health,
     onConfigSearchChange,
     onOpenAuth,
+    onOpenDiscovery,
     onSelectConfig,
     onSignOut,
     selectedConfigId,
@@ -128,6 +132,18 @@ export function ConfigRail(props: ConfigRailProps) {
           ) : null}
         </div>
       </div>
+
+      <section className="sidebar-tool-panel">
+        <p className="eyebrow">Quick tools</p>
+        <button
+          className={`sidebar-tool-button ${activeWorkspace === "discovery" ? "sidebar-tool-button--active" : ""}`}
+          onClick={onOpenDiscovery}
+          type="button"
+        >
+          <strong>Discovery</strong>
+          <span>Scan devices, review identifiers, and draft new switches without opening the editor first.</span>
+        </button>
+      </section>
 
       <div className="accordion-toolbar">
         <button

@@ -85,14 +85,31 @@ const WORKSPACE_OPTIONS: Array<{
     label: "Automations",
     description: "Import and export Home Assistant automations for the active switch.",
     requiresDraft: true
-  },
-  {
-    id: "discovery",
-    label: "Discovery",
-    description: "Scan and draft new switches without crowding the editor.",
-    requiresDraft: false
   }
 ];
+
+const WORKSPACE_DETAILS: Record<WorkspaceMode, { description: string; label: string }> = {
+  automations: {
+    description: "Import and export Home Assistant automations for the active switch.",
+    label: "Automations"
+  },
+  discovery: {
+    description: "Scan and draft new switches without crowding the editor.",
+    label: "Discovery"
+  },
+  editor: {
+    description: "Core switch config, rooms, layout, and native actions.",
+    label: "Editor"
+  },
+  teach: {
+    description: "Capture switch presses and build the learn library.",
+    label: "Teach"
+  },
+  virtual: {
+    description: "Synthetic multi-press setup for the selected switch button.",
+    label: "Virtual Press"
+  }
+};
 
 export function App() {
   const [authStatus, setAuthStatus] = useState<AuthStatusResponse | null>(null);
@@ -679,7 +696,7 @@ export function App() {
     automationTarget === "virtual"
       ? `Button ${selectedButtonIndex + 1} synthetic press ${selectedVirtualPressCount}x`
       : `Button ${selectedButtonIndex + 1} action ${selectedActionIndex + 1}`;
-  const activeWorkspaceOption = WORKSPACE_OPTIONS.find((option) => option.id === activeWorkspace) ?? WORKSPACE_OPTIONS[0];
+  const activeWorkspaceOption = WORKSPACE_DETAILS[activeWorkspace];
 
   if (authChecking && authStatus === null) {
     return (
@@ -754,6 +771,7 @@ export function App() {
   return (
     <div className="studio-shell">
       <ConfigRail
+        activeWorkspace={activeWorkspace}
         authBusy={authBusy}
         authStatus={authStatus}
         blueprintsById={blueprintsById}
@@ -765,6 +783,7 @@ export function App() {
           setAuthError(null);
           setAuthDialogOpen(true);
         }}
+        onOpenDiscovery={() => handleWorkspaceChange("discovery")}
         onSelectConfig={selectConfig}
         onSignOut={() => void handleSignOut()}
         selectedConfigId={selectedConfigId}

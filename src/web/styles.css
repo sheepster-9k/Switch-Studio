@@ -164,6 +164,46 @@ textarea {
   box-shadow: 0 0 18px rgba(139, 201, 158, 0.65);
 }
 
+.sidebar-tool-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.sidebar-tool-button {
+  background: rgba(9, 13, 12, 0.3);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  color: inherit;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding: 0.95rem 1rem;
+  text-align: left;
+  transition: transform 140ms ease, border-color 140ms ease, background 140ms ease;
+}
+
+.sidebar-tool-button:hover {
+  background: rgba(213, 195, 131, 0.12);
+  border-color: var(--line-strong);
+  transform: translateY(-1px);
+}
+
+.sidebar-tool-button--active {
+  background: rgba(213, 195, 131, 0.16);
+  border-color: rgba(213, 195, 131, 0.32);
+}
+
+.sidebar-tool-button strong {
+  display: block;
+}
+
+.sidebar-tool-button span {
+  color: var(--muted);
+  line-height: 1.45;
+}
+
 .config-list {
   display: flex;
   flex: 1;
