@@ -1712,7 +1712,7 @@ async function main(): Promise<void> {
     reply: FastifyReply,
     task: (client: HomeAssistantClient) => Promise<T>
   ): Promise<T | { error: string }> {
-    const session = authManager.getSession(request);
+    const session = authManager.getSession(request, reply);
     if (!session) {
       return authManager.unauthorized(reply);
     }
@@ -1732,7 +1732,7 @@ async function main(): Promise<void> {
 
   app.get("/api/auth/status", async (request, reply) => {
     reply.header("Cache-Control", "no-store");
-    return authManager.status(request, config);
+    return authManager.status(request, reply, config);
   });
 
   app.post("/api/auth/session", async (request, reply) => {
@@ -1776,7 +1776,7 @@ async function main(): Promise<void> {
   app.delete("/api/auth/session", async (request, reply) => {
     reply.header("Cache-Control", "no-store");
     authManager.clearSession(request, reply);
-    return authManager.status(request, config);
+    return authManager.status(request, reply, config);
   });
 
   app.get("/api/health", async (request, reply) =>

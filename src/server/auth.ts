@@ -7,7 +7,7 @@ import type { FastifyReply, FastifyRequest } from "fastify";
 import type { StudioConfig } from "./config.js";
 
 const SESSION_COOKIE = "switch_manager_studio_session";
-const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
+const SESSION_TTL_MS = 10 * 365 * 24 * 60 * 60 * 1000; // ~10 years — internal tool, no expiry
 const MAX_SESSIONS = 24;
 const SESSION_PERSIST_INTERVAL_MS = 60 * 1000;
 
@@ -109,28 +109,43 @@ export class StudioAuthManager {
     return session;
   }
 
-  getSession(request: FastifyRequest): StudioAuthSession | null {
+  getSession(request: FastifyRequest, reply?: FastifyReply): StudioAuthSession | null {
     this.purgeExpired();
     const sessionId = parseCookieHeader(request.headers.cookie)[SESSION_COOKIE];
-    if (!sessionId) {
-      return null;
+    if (sessionId) {
+      const session = this.sessions.get(sessionId) ?? null;
+      if (session) {
+        session.lastUsedAt = Date.now();
+        this.markDirty();
+        this.persistSessions();
+        return session;
+      }
     }
-    const session = this.sessions.get(sessionId) ?? null;
-    if (!session) {
-      return null;
+    // No valid cookie — auto-assign the most recently used session if one exists.
+    // This means any browser on the LAN is automatically authenticated once the token
+    // has been configured. The auth screen only appears during initial onboarding when
+    // no session exists yet.
+    if (this.sessions.size > 0) {
+      const session = [...this.sessions.values()].sort((a, b) => b.lastUsedAt - a.lastUsedAt)[0];
+      if (session) {
+        session.lastUsedAt = Date.now();
+        this.markDirty();
+        this.persistSessions();
+        if (reply) {
+          reply.header("Set-Cookie", serializeCookie(SESSION_COOKIE, session.id));
+        }
+        return session;
+      }
     }
-    session.lastUsedAt = Date.now();
-    this.markDirty();
-    this.persistSessions();
-    return session;
+    return null;
   }
 
-  status(request: FastifyRequest, config: StudioConfig): {
+  status(request: FastifyRequest, reply: FastifyReply, config: StudioConfig): {
     authenticated: boolean;
     defaultHaBaseUrl: string | null;
     haBaseUrl: string | null;
   } {
-    const session = this.getSession(request);
+    const session = this.getSession(request, reply);
     return {
       authenticated: Boolean(session),
       haBaseUrl: session?.haBaseUrl ?? null,
