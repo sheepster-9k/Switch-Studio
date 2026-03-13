@@ -1,16 +1,21 @@
-import { useEffect, useState } from "react";
-
 import type {
+  DeviceSummary,
+  EntitySummary,
   SequenceStep,
+  StudioSnapshot,
   SwitchManagerBlueprint,
   SwitchManagerConfig
 } from "../../shared/types";
+import { SequenceListEditor } from "./SequenceEditor";
 
 interface VirtualActionEditorProps {
+  devicesById: Map<string, DeviceSummary>;
   draft: SwitchManagerConfig;
+  entitiesById: Map<string, EntitySummary>;
   selectedBlueprint: SwitchManagerBlueprint;
   selectedButtonIndex: number;
   selectedPressCount: number;
+  snapshot: StudioSnapshot | null;
   onSelectPressCount: (pressCount: number) => void;
   onVirtualMultiPressEnabledChange: (enabled: boolean) => void;
   onVirtualMultiPressWindowChange: (value: number) => void;
@@ -23,29 +28,25 @@ interface VirtualActionEditorProps {
 
 export function VirtualActionEditor(props: VirtualActionEditorProps) {
   const {
+    devicesById,
     draft,
+    entitiesById,
     selectedBlueprint,
     selectedButtonIndex,
     selectedPressCount,
+    snapshot,
     onSelectPressCount,
     onVirtualMultiPressEnabledChange,
     onVirtualMultiPressWindowChange,
     onVirtualMultiPressMaxPressesChange,
     onVirtualActionChange
   } = props;
-  const [sequenceText, setSequenceText] = useState("[]");
-  const [sequenceError, setSequenceError] = useState<string | null>(null);
 
   const blueprintButton = selectedBlueprint.buttons[selectedButtonIndex];
   const configButton = draft.buttons[selectedButtonIndex];
   const supported = (blueprintButton?.actions.length ?? 0) <= 1;
   const currentVirtual =
     configButton?.virtualActions.find((entry) => entry.pressCount === selectedPressCount) ?? null;
-
-  useEffect(() => {
-    setSequenceText(JSON.stringify(currentVirtual?.sequence ?? [], null, 2));
-    setSequenceError(null);
-  }, [currentVirtual?.pressCount, currentVirtual?.sequence, selectedButtonIndex]);
 
   if (!supported) {
     return (
@@ -151,32 +152,16 @@ export function VirtualActionEditor(props: VirtualActionEditorProps) {
         </select>
       </label>
 
-      <label className="field">
-        <span>Sequence JSON</span>
-        <textarea
-          onChange={(event) => setSequenceText(event.target.value)}
-          rows={10}
-          value={sequenceText}
-        />
-      </label>
-      <div className="inline-actions">
-        <button
-          className="button"
-          onClick={() => {
-            try {
-              const parsed = JSON.parse(sequenceText) as SequenceStep[];
-              onVirtualActionChange(selectedPressCount, { sequence: parsed });
-              setSequenceError(null);
-            } catch (error) {
-              setSequenceError(error instanceof Error ? error.message : String(error));
-            }
-          }}
-          type="button"
-        >
-          Apply virtual sequence
-        </button>
-        {sequenceError ? <span className="inline-error">{sequenceError}</span> : null}
-      </div>
+      <SequenceListEditor
+        addLabel="Add virtual step"
+        devicesById={devicesById}
+        emptyText="No steps configured for this press count."
+        entitiesById={entitiesById}
+        label={`Press ${selectedPressCount}x`}
+        onSequenceChange={(sequence) => onVirtualActionChange(selectedPressCount, { sequence })}
+        sequence={currentVirtual?.sequence ?? []}
+        snapshot={snapshot}
+      />
     </section>
   );
 }

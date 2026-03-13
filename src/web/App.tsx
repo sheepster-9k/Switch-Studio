@@ -235,6 +235,27 @@ export function App() {
     }
   }, [activeWorkspace, draft, selectedBlueprint]);
 
+  useEffect(() => {
+    if (!notice || notice.kind !== "success") {
+      return;
+    }
+    const timer = window.setTimeout(() => setNotice(null), 3000);
+    return () => window.clearTimeout(timer);
+  }, [notice]);
+
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent): void {
+      if ((event.ctrlKey || event.metaKey) && event.key === "s") {
+        event.preventDefault();
+        if (draft && dirty && !saving) {
+          void handleSave();
+        }
+      }
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [draft, dirty, saving]);
+
   async function loadAuthState(preferredConfigId?: string): Promise<void> {
     setAuthChecking(true);
     setAuthError(null);
@@ -812,7 +833,12 @@ export function App() {
             <button
               className="button"
               disabled={!draft}
-              onClick={() => (selectedStoredConfig ? selectConfig(selectedStoredConfig) : setDraft(null))}
+              onClick={() => {
+                if (dirty && !window.confirm("Discard unsaved changes?")) {
+                  return;
+                }
+                selectedStoredConfig ? selectConfig(selectedStoredConfig) : setDraft(null);
+              }}
               type="button"
             >
               Discard
@@ -829,10 +855,22 @@ export function App() {
         </header>
 
         {loading ? <section className="panel loading-panel">Loading studio snapshot...</section> : null}
-        {blockingError ? <section className="panel error-panel">{blockingError}</section> : null}
+        {blockingError ? (
+          <section className="panel error-panel">
+            <span>{blockingError}</span>
+          </section>
+        ) : null}
         {notice ? (
           <section className={`panel ${notice.kind === "error" ? "error-panel" : "notice-panel"}`}>
-            {notice.text}
+            <span>{notice.text}</span>
+            <button
+              aria-label="Dismiss"
+              className="notice-dismiss"
+              onClick={() => setNotice(null)}
+              type="button"
+            >
+              ×
+            </button>
           </section>
         ) : null}
 
@@ -848,8 +886,6 @@ export function App() {
               </button>
             ) : null}
           </div>
-
-          <p className="panel-copy">{activeWorkspaceOption.description}</p>
 
           <div className="workspace-switcher__grid">
             {WORKSPACE_OPTIONS.map((option) => {
@@ -933,7 +969,9 @@ export function App() {
                     })}
 
                     <VirtualActionEditor
+                      devicesById={devicesById}
                       draft={draft}
+                      entitiesById={entitiesById}
                       onSelectPressCount={(pressCount) => {
                         setSelectedVirtualPressCount(pressCount);
                         setAutomationTarget("virtual");
@@ -965,6 +1003,7 @@ export function App() {
                       selectedBlueprint={selectedBlueprint}
                       selectedButtonIndex={selectedButtonIndex}
                       selectedPressCount={selectedVirtualPressCount}
+                      snapshot={snapshot}
                     />
                   </>
                 ) : (

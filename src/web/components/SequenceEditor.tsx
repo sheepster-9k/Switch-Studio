@@ -194,6 +194,32 @@ const ZERO_DURATION: DurationParts = {
   seconds: 0
 };
 
+function stepKindPillClass(kind: StepKind): string {
+  switch (kind) {
+    case "action":
+    case "device_action":
+      return "pill--step-action";
+    case "condition":
+      return "pill--step-condition";
+    case "delay":
+    case "wait_for_trigger":
+    case "wait_template":
+      return "pill--step-delay";
+    case "if":
+    case "choose":
+      return "pill--step-branch";
+    case "event":
+    case "variables":
+    case "parallel":
+    case "sequence":
+      return "pill--step-event";
+    case "stop":
+      return "pill--step-stop";
+    default:
+      return "pill--muted";
+  }
+}
+
 function EditorOverlay(props: {
   children: ReactNode;
   eyebrow: string;
@@ -401,7 +427,7 @@ export function SequenceEditor(props: SequenceEditorProps) {
   );
 }
 
-function SequenceListEditor(props: SequenceListEditorProps) {
+export function SequenceListEditor(props: SequenceListEditorProps) {
   const {
     addLabel = "Add step",
     depth = 0,
@@ -517,10 +543,9 @@ function SequenceListEditor(props: SequenceListEditorProps) {
       <div className="step-builder__toolbar">
         <div>
           <p className="eyebrow">{label}</p>
-          <h4>{sequence.length} step{sequence.length === 1 ? "" : "s"}</h4>
+          <h4>{label} ({sequence.length})</h4>
         </div>
         <div className="step-builder__toolbar-actions">
-          {sequence.length > 0 ? <span className="pill pill--muted">Cards stay collapsed until you edit one</span> : null}
           <button className="button" onClick={() => setPickerOpen(true)} type="button">
             {addLabel}
           </button>
@@ -580,7 +605,7 @@ function SequenceListEditor(props: SequenceListEditorProps) {
                 <span>Step {index + 1}</span>
                 <strong>{summarizeStep(step)}</strong>
                 <div className="sequence-card__meta">
-                  <span className="pill pill--muted">{STEP_KIND_LABELS[kind]}</span>
+                  <span className={`pill ${stepKindPillClass(kind)}`}>{STEP_KIND_LABELS[kind]}</span>
                   {displayAlias ? <span className="muted-chip">{displayAlias}</span> : null}
                 </div>
               </button>
@@ -588,6 +613,10 @@ function SequenceListEditor(props: SequenceListEditorProps) {
           );
         })}
       </div>
+
+      <button className="button button--add-step" onClick={() => setPickerOpen(true)} type="button">
+        + {addLabel}
+      </button>
 
       <PickerDialog
         description="Pick a Home Assistant action block, then fine tune it in the editor."

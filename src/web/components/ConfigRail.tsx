@@ -158,7 +158,7 @@ export function ConfigRail(props: ConfigRailProps) {
           onClick={() => setOpenGroups(Object.fromEntries(groupedConfigs.map((group) => [group.key, false])))}
           type="button"
         >
-          Shut all
+          Close all
         </button>
       </div>
 

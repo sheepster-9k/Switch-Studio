@@ -1,3 +1,5 @@
+import { useEffect } from "react";
+
 import type { DevicePropertiesResponse } from "../../shared/types";
 
 interface PropertyPanelProps {
@@ -9,12 +11,32 @@ interface PropertyPanelProps {
 
 export function PropertyPanel(props: PropertyPanelProps) {
   const { open, properties, onClose, onControl } = props;
+
+  useEffect(() => {
+    if (!open) {
+      return undefined;
+    }
+    function handleKeyDown(event: KeyboardEvent): void {
+      if (event.key === "Escape") {
+        onClose();
+      }
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [onClose, open]);
+
   if (!open) {
     return null;
   }
 
   return (
     <aside className="property-drawer">
+      <button
+        aria-label="Close properties"
+        className="property-drawer__backdrop"
+        onClick={onClose}
+        type="button"
+      />
       <div className="property-drawer__panel">
         <div className="panel-head">
           <div>
