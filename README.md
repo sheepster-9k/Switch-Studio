@@ -22,18 +22,21 @@ HA_BASE_URL=http://homeassistant.local:8123
 PORT=8878
 ```
 
-`HA_BASE_URL` is optional. When present, the auth panel uses it as the default Home Assistant URL. The access token is entered at runtime in the studio UI and stays in server memory for the active session only.
+`HA_BASE_URL` is optional. When present, the auth panel uses it as the default Home Assistant URL. The access token is entered at runtime in the studio UI and is stored server-side in the studio data directory for the session lifetime. It is not written into the repo or the frontend bundle.
 
 Optional paths:
 
 ```bash
 SWITCH_MANAGER_BLUEPRINT_IMAGE_DIR=/opt/switch-manager-studio/data/blueprints
 SWITCH_MANAGER_BLUEPRINT_OVERRIDE_IMAGE_DIR=/opt/switch-manager-studio/data/blueprints-overrides
+SWITCH_MANAGER_AUTH_SESSION_STORE=/opt/switch-manager-studio/data/auth-sessions.json
 ```
 
 `SWITCH_MANAGER_BLUEPRINT_IMAGE_DIR` should contain the switch-manager blueprint `.png` files. The backend serves those locally while the blueprint YAML data comes from Home Assistant through the `switch_manager` websocket commands.
 
 `SWITCH_MANAGER_BLUEPRINT_OVERRIDE_IMAGE_DIR` stores studio-managed image overrides created from the editor. The UI accepts PNG, JPG, WEBP, GIF, and SVG uploads, converts them to PNG, constrains them to the Switch Manager recommendation of 800px width or 500px height, and uses the result both in the editor canvas and exported blueprint packages.
+
+`SWITCH_MANAGER_AUTH_SESSION_STORE` is the runtime-only session file used to persist authenticated studio sessions across page reloads and service restarts.
 
 ## Development
 

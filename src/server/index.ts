@@ -1703,7 +1703,7 @@ async function serveLocalBlueprintImage(
 
 async function main(): Promise<void> {
   const config = loadConfig();
-  const authManager = new StudioAuthManager();
+  const authManager = new StudioAuthManager(config);
   const app = Fastify({ logger: true });
   const webRoot = resolve(__dirname, "../web");
 

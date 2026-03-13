@@ -1,6 +1,7 @@
 import { resolve } from "node:path";
 
 export interface StudioConfig {
+  authSessionStorePath: string;
   host: string;
   port: number;
   defaultHaBaseUrl: string | null;
@@ -31,6 +32,7 @@ export function loadConfig(): StudioConfig {
   const defaultHaBaseUrl = firstEnvValue("HA_BASE_URL", "HASS_URL", "HOME_ASSISTANT_URL");
 
   return {
+    authSessionStorePath: resolveDataPath(process.env.SWITCH_MANAGER_AUTH_SESSION_STORE ?? "data/auth-sessions.json"),
     host: process.env.HOST ?? "0.0.0.0",
     port: Number(process.env.PORT ?? "8878"),
     defaultHaBaseUrl: defaultHaBaseUrl ? cleanBaseUrl(defaultHaBaseUrl) : null,

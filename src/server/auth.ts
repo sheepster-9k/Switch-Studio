@@ -1,4 +1,6 @@
 import { randomBytes } from "node:crypto";
+import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
+import { dirname } from "node:path";
 
 import type { FastifyReply, FastifyRequest } from "fastify";
 
@@ -7,6 +9,7 @@ import type { StudioConfig } from "./config.js";
 const SESSION_COOKIE = "switch_manager_studio_session";
 const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
 const MAX_SESSIONS = 24;
+const SESSION_PERSIST_INTERVAL_MS = 60 * 1000;
 
 interface StudioAuthSession {
   id: string;
@@ -14,6 +17,10 @@ interface StudioAuthSession {
   accessToken: string;
   createdAt: number;
   lastUsedAt: number;
+}
+
+interface SessionStoreFile {
+  sessions: StudioAuthSession[];
 }
 
 function cleanBaseUrl(value: string): string {
@@ -44,18 +51,31 @@ function serializeCookie(name: string, value: string, expiresImmediately = false
   if (expiresImmediately) {
     parts.push("Max-Age=0");
     parts.push("Expires=Thu, 01 Jan 1970 00:00:00 GMT");
+  } else {
+    parts.push(`Max-Age=${Math.floor(SESSION_TTL_MS / 1000)}`);
+    parts.push(`Expires=${new Date(Date.now() + SESSION_TTL_MS).toUTCString()}`);
   }
   return parts.join("; ");
 }
 
 export class StudioAuthManager {
   private readonly sessions = new Map<string, StudioAuthSession>();
+  private readonly sessionStorePath: string;
+  private dirty = false;
+  private lastPersistedAt = 0;
+
+  constructor(config: StudioConfig) {
+    this.sessionStorePath = config.authSessionStorePath;
+    this.loadPersistedSessions();
+  }
 
   clearSession(request: FastifyRequest, reply: FastifyReply): void {
     const session = this.getSession(request);
     if (session) {
       this.sessions.delete(session.id);
+      this.markDirty();
     }
+    this.persistSessions(true);
     reply.header("Set-Cookie", serializeCookie(SESSION_COOKIE, "", true));
   }
 
@@ -83,6 +103,8 @@ export class StudioAuthManager {
       lastUsedAt: Date.now()
     };
     this.sessions.set(session.id, session);
+    this.markDirty();
+    this.persistSessions(true);
     reply.header("Set-Cookie", serializeCookie(SESSION_COOKIE, session.id));
     return session;
   }
@@ -98,6 +120,8 @@ export class StudioAuthManager {
       return null;
     }
     session.lastUsedAt = Date.now();
+    this.markDirty();
+    this.persistSessions();
     return session;
   }
 
@@ -123,10 +147,90 @@ export class StudioAuthManager {
 
   private purgeExpired(): void {
     const cutoff = Date.now() - SESSION_TTL_MS;
+    let removed = false;
     for (const [sessionId, session] of this.sessions.entries()) {
       if (session.lastUsedAt < cutoff) {
         this.sessions.delete(sessionId);
+        removed = true;
       }
     }
+    if (removed) {
+      this.markDirty();
+      this.persistSessions(true);
+    }
+  }
+
+  private loadPersistedSessions(): void {
+    if (!existsSync(this.sessionStorePath)) {
+      return;
+    }
+
+    try {
+      const parsed = JSON.parse(readFileSync(this.sessionStorePath, "utf8")) as Partial<SessionStoreFile>;
+      const sessions = Array.isArray(parsed.sessions) ? parsed.sessions : [];
+      for (const rawSession of sessions) {
+        if (
+          typeof rawSession?.id !== "string" ||
+          typeof rawSession?.haBaseUrl !== "string" ||
+          typeof rawSession?.accessToken !== "string" ||
+          typeof rawSession?.createdAt !== "number" ||
+          typeof rawSession?.lastUsedAt !== "number"
+        ) {
+          continue;
+        }
+        this.sessions.set(rawSession.id, {
+          accessToken: rawSession.accessToken,
+          createdAt: rawSession.createdAt,
+          haBaseUrl: cleanBaseUrl(rawSession.haBaseUrl),
+          id: rawSession.id,
+          lastUsedAt: rawSession.lastUsedAt
+        });
+      }
+      this.dirty = false;
+      this.lastPersistedAt = Date.now();
+      this.purgeExpired();
+    } catch (error) {
+      console.warn("Could not load persisted auth sessions:", error);
+    }
+  }
+
+  private markDirty(): void {
+    this.dirty = true;
+  }
+
+  private persistSessions(force = false): void {
+    if (!this.dirty) {
+      return;
+    }
+    if (!force && Date.now() - this.lastPersistedAt < SESSION_PERSIST_INTERVAL_MS) {
+      return;
+    }
+
+    const payload: SessionStoreFile = {
+      sessions: [...this.sessions.values()]
+    };
+    const directory = dirname(this.sessionStorePath);
+    const tempPath = `${this.sessionStorePath}.tmp`;
+
+    mkdirSync(directory, { recursive: true });
+
+    if (payload.sessions.length === 0) {
+      if (existsSync(this.sessionStorePath)) {
+        unlinkSync(this.sessionStorePath);
+      }
+      this.dirty = false;
+      this.lastPersistedAt = Date.now();
+      return;
+    }
+
+    writeFileSync(tempPath, JSON.stringify(payload, null, 2), { encoding: "utf8", mode: 0o600 });
+    renameSync(tempPath, this.sessionStorePath);
+    try {
+      chmodSync(this.sessionStorePath, 0o600);
+    } catch {
+      // Ignore platforms that do not support chmod semantics here.
+    }
+    this.dirty = false;
+    this.lastPersistedAt = Date.now();
   }
 }
