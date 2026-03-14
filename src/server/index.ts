@@ -1714,11 +1714,22 @@ async function exportAutomation(
 
   const virtual = Boolean(payload.virtual);
   const pressCount = payload.pressCount ?? 1;
+
+  const buttonEntry = configEntry.buttons[payload.buttonIndex];
+  if (!buttonEntry) {
+    throw new Error(`Button index ${payload.buttonIndex} is out of range`);
+  }
+
   const sequence = virtual
-    ? configEntry.buttons[payload.buttonIndex]?.virtualActions.find((entry) => entry.pressCount === pressCount)?.sequence ?? []
-    : configEntry.buttons[payload.buttonIndex]?.actions[payload.actionIndex]?.sequence ?? [];
+    ? buttonEntry.virtualActions.find((entry) => entry.pressCount === pressCount)?.sequence ?? []
+    : buttonEntry.actions[payload.actionIndex]?.sequence ?? [];
+
+  if (!virtual && !buttonEntry.actions[payload.actionIndex]) {
+    throw new Error(`Action index ${payload.actionIndex} is out of range`);
+  }
+
   if (!sequence.length) {
-    throw new Error("Selected action has no sequence to export");
+    throw new Error("Selected action has no sequence steps to export");
   }
 
   const exported = buildExportAutomation(

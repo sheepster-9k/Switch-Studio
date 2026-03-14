@@ -226,7 +226,7 @@ export async function exportBlueprintPackage(config: SwitchManagerConfig): Promi
   document.body.append(anchor);
   anchor.click();
   anchor.remove();
-  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  window.setTimeout(() => URL.revokeObjectURL(url), 10000);
   return fileName;
 }
 

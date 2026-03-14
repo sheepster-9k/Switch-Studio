@@ -31,6 +31,7 @@ function toWsUrl(baseUrl: string): string {
 
 export class HomeAssistantClient {
   private readonly config: StudioConfig;
+  private connectingSocket: WebSocket | null = null;
   private connectPromise: Promise<void> | null = null;
   private messageId = 1;
   private pending = new Map<number, PendingRequest<unknown>>();
@@ -108,10 +109,16 @@ export class HomeAssistantClient {
 
   close(): void {
     const socket = this.socket;
+    const connectingSocket = this.connectingSocket;
     this.socket = null;
+    this.connectingSocket = null;
     this.connectPromise = null;
     if (socket && socket.readyState === WebSocket.OPEN) {
       socket.close();
+    }
+    if (connectingSocket && connectingSocket !== socket) {
+      connectingSocket.removeAllListeners();
+      connectingSocket.close();
     }
     for (const [id, pending] of this.pending.entries()) {
       clearTimeout(pending.timer);
@@ -142,6 +149,7 @@ export class HomeAssistantClient {
 
     this.connectPromise = new Promise<void>((resolve, reject) => {
       const socket = new WebSocket(toWsUrl(this.config.haBaseUrl));
+      this.connectingSocket = socket;
       let authenticated = false;
 
       const rejectPending = (error: Error) => {
@@ -154,6 +162,9 @@ export class HomeAssistantClient {
 
       const cleanup = () => {
         socket.removeAllListeners();
+        if (this.connectingSocket === socket) {
+          this.connectingSocket = null;
+        }
         if (this.socket === socket && socket.readyState !== WebSocket.OPEN) {
           this.socket = null;
         }
@@ -170,6 +181,7 @@ export class HomeAssistantClient {
           if (message.type === "auth_ok") {
             authenticated = true;
             this.socket = socket;
+            this.connectingSocket = null;
             resolve();
             return;
           }
