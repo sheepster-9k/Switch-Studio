@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 
@@ -73,13 +73,9 @@ interface SocketLike {
 }
 
 function parseJson(payload: Buffer): unknown {
-  const attempts = [
-    payload.toString("utf8"),
-    payload.toString("utf8").replace(/^\uFEFF/, ""),
-    payload.toString("utf8").replace(/\0/g, "").replace(/^\uFEFF/, "")
-  ];
-
-  for (const candidate of attempts) {
+  const raw = payload.toString("utf8");
+  const candidates = [raw, raw.replace(/^\uFEFF/, ""), raw.replace(/\0/g, "").replace(/^\uFEFF/, "")];
+  for (const candidate of candidates) {
     try {
       return JSON.parse(candidate.trim());
     } catch {
@@ -140,10 +136,6 @@ function pickBoolean(value: unknown): boolean | null {
   return null;
 }
 
-function numberOr(value: unknown, fallback = 0): number {
-  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
-}
-
 function nullableNumber(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
@@ -163,12 +155,12 @@ function normalizeAreaOccupancy(raw: Record<string, unknown>): Record<AreaSlot, 
 
 function normalizeBaseBounds(raw: Record<string, unknown>): BaseBounds {
   return {
-    width_min: numberOr(raw.mmWaveWidthMin, -600),
-    width_max: numberOr(raw.mmWaveWidthMax, 600),
-    depth_min: numberOr(raw.mmWaveDepthMin, 0),
-    depth_max: numberOr(raw.mmWaveDepthMax, 600),
-    height_min: numberOr(raw.mmWaveHeightMin, -300),
-    height_max: numberOr(raw.mmWaveHeightMax, 300)
+    width_min: finiteOr(raw.mmWaveWidthMin, -600),
+    width_max: finiteOr(raw.mmWaveWidthMax, 600),
+    depth_min: finiteOr(raw.mmWaveDepthMin, 0),
+    depth_max: finiteOr(raw.mmWaveDepthMax, 600),
+    height_min: finiteOr(raw.mmWaveHeightMin, -300),
+    height_max: finiteOr(raw.mmWaveHeightMax, 300)
   };
 }
 
@@ -178,8 +170,8 @@ function normalizeTargetPoints(raw: Record<string, unknown>): TargetPoint[] {
     return direct
       .filter((entry): entry is Record<string, unknown> => Boolean(entry) && typeof entry === "object")
       .map((entry) => ({
-        x: numberOr(entry.x, 0),
-        y: numberOr(entry.y, 0),
+        x: finiteOr(entry.x, 0),
+        y: finiteOr(entry.y, 0),
         z: typeof entry.z === "number" ? entry.z : undefined,
         id: typeof entry.id === "number" ? entry.id : undefined,
         speed: typeof entry.speed === "number" ? entry.speed : undefined,
@@ -228,8 +220,8 @@ function normalizeTelemetryTargets(payload: unknown): TargetPoint[] {
     return payload
       .filter((entry): entry is Record<string, unknown> => Boolean(entry) && typeof entry === "object")
       .map((entry) => ({
-        x: numberOr(entry.x, 0),
-        y: numberOr(entry.y, 0),
+        x: finiteOr(entry.x, 0),
+        y: finiteOr(entry.y, 0),
         z: hasNumeric(entry.z) ? entry.z : undefined,
         id: hasNumeric(entry.id) ? entry.id : undefined,
         speed: hasNumeric(entry.speed) ? entry.speed : hasNumeric(entry.dop) ? entry.dop : undefined,
@@ -428,10 +420,6 @@ function profileToSettings(profile: StudioProfile): DeviceProfileSettings {
   };
 }
 
-function normalizeSnapshot(meta: DeviceMeta, runtime: RuntimeState | undefined, areaLabels: DeviceAreaLabels): DeviceSnapshot {
-  return buildSnapshot(meta, runtime, areaLabels, false);
-}
-
 function buildSnapshot(
   meta: DeviceMeta,
   runtime: RuntimeState | undefined,
@@ -471,11 +459,11 @@ function buildSnapshot(
       roomPreset: stringOr(rawState.mmWaveRoomSizePreset, "Custom"),
       detectSensitivity: stringOr(rawState.mmWaveDetectSensitivity, "Medium"),
       detectTrigger: stringOr(rawState.mmWaveDetectTrigger, "Fast (0.2s, default)"),
-      holdTime: numberOr(rawState.mmWaveHoldTime, 30),
-      stayLife: numberOr(rawState.mmWaveStayLife, 300),
+      holdTime: finiteOr(rawState.mmWaveHoldTime, 30),
+      stayLife: finiteOr(rawState.mmWaveStayLife, 300),
       targetInfoReport: stringOr(rawState.mmWaveTargetInfoReport, "Enable"),
       controlWiredDevice: stringOr(rawState.mmwaveControlWiredDevice, "Occupancy (default)"),
-      defaultLevelLocal: clamp(numberOr(rawState.defaultLevelLocal, 255), 1, 255),
+      defaultLevelLocal: clamp(finiteOr(rawState.defaultLevelLocal, 255), 1, 255),
       mmwaveVersion: nullableNumber(rawState.mmWaveVersion),
       baseBounds: normalizeBaseBounds(rawState),
       state: stringOr(rawState.state, "UNKNOWN"),
@@ -677,7 +665,8 @@ export class MqttStudioBridge {
   }
 
   private handleMessage(topic: string, payload: Buffer): void {
-    this.bridge.lastMessageAt = new Date().toISOString();
+    const now = new Date().toISOString();
+    this.bridge.lastMessageAt = now;
     const studioPrefix = `${this.config.baseTopic}/_mmwave_studio/`;
     if (topic.startsWith(studioPrefix)) {
       const remainder = topic.slice(studioPrefix.length);
@@ -692,12 +681,11 @@ export class MqttStudioBridge {
           const parsed = parseJson(payload);
           const targetPoints = normalizeTelemetryTargets(parsed);
           const current = this.runtime.get(name) ?? this.emptyRuntimeState();
-          const telemetryAt = new Date().toISOString();
           current.targetPoints = targetPoints;
-          current.targetTrails = mergeTargetTrails(current.targetTrails, targetPoints, telemetryAt);
-          current.targetTelemetryAt = telemetryAt;
+          current.targetTrails = mergeTargetTrails(current.targetTrails, targetPoints, now);
+          current.targetTelemetryAt = now;
           current.targetTelemetryRaw = telemetryRaw(parsed);
-          current.updatedAt = telemetryAt;
+          current.updatedAt = now;
           this.runtime.set(name, current);
           this.scheduleRuntimeCacheWrite();
           this.scheduleTargetExpiry(name, telemetryAt);
@@ -759,7 +747,7 @@ export class MqttStudioBridge {
 
     if (third === "availability") {
       current.availability = normalizeAvailability(payload, parsed);
-      current.updatedAt = new Date().toISOString();
+      current.updatedAt = now;
       this.runtime.set(name, current);
       this.scheduleRuntimeCacheWrite();
       this.emitDevice(name);
@@ -771,7 +759,7 @@ export class MqttStudioBridge {
       if (current.availability === "unknown") {
         current.availability = "online";
       }
-      current.updatedAt = new Date().toISOString();
+      current.updatedAt = now;
       this.runtime.set(name, current);
       this.scheduleRuntimeCacheWrite();
       this.emitDevice(name);
@@ -807,9 +795,6 @@ export class MqttStudioBridge {
   }
 
   private loadRuntimeCache(): void {
-    if (!existsSync(RUNTIME_CACHE_PATH)) {
-      return;
-    }
     try {
       const raw = JSON.parse(readFileSync(RUNTIME_CACHE_PATH, "utf8")) as Record<string, RuntimeState>;
       for (const [name, state] of Object.entries(raw)) {
@@ -838,7 +823,7 @@ export class MqttStudioBridge {
     this.cacheWriteTimer = setTimeout(() => {
       this.cacheWriteTimer = null;
       void this.writeRuntimeCache();
-    }, 200);
+    }, 2000);
   }
 
   private async writeRuntimeCache(): Promise<void> {
@@ -926,7 +911,7 @@ export class MqttStudioBridge {
       try {
         socket.send(message);
       } catch {
-        // Socket closed between readyState check and send; skip it.
+        this.sockets.delete(socket);
       }
     }
   }
@@ -1062,13 +1047,12 @@ export class MqttStudioBridge {
     }
 
     await this.updateSettings(name, profileToSettings(profile));
-    await wait(400);
-    await this.publishAreaCollection(name, "detection", profile.areas.detection);
-    await wait(400);
-    await this.publishAreaCollection(name, "interference", profile.areas.interference, true);
-    await wait(400);
-    await this.publishAreaCollection(name, "stay", profile.areas.stay);
-    await wait(1100);
+    await Promise.all([
+      this.publishAreaCollection(name, "detection", profile.areas.detection),
+      this.publishAreaCollection(name, "interference", profile.areas.interference, true),
+      this.publishAreaCollection(name, "stay", profile.areas.stay)
+    ]);
+    await wait(800);
     return this.queryAreas(name);
   }
 

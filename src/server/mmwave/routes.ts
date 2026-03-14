@@ -121,19 +121,15 @@ function isAreaLabelRequest(body: unknown): body is UpdateAreaLabelRequest {
   return typeof label === "string" && label.trim().length <= 48;
 }
 
-function isImportProfileCandidate(body: unknown): body is { name: string; sourceDevice: string } {
-  return isProfileRequest(body);
-}
-
 function isImportRequest(body: unknown): boolean {
   if (Array.isArray(body)) {
-    return body.every((entry) => isImportProfileCandidate(entry));
+    return body.every((entry) => isProfileRequest(entry));
   }
   if (body && typeof body === "object" && !Array.isArray(body) && "profiles" in body) {
     const profiles = (body as { profiles?: unknown }).profiles;
-    return Array.isArray(profiles) && profiles.every((entry) => isImportProfileCandidate(entry));
+    return Array.isArray(profiles) && profiles.every((entry) => isProfileRequest(entry));
   }
-  return isImportProfileCandidate(body);
+  return isProfileRequest(body);
 }
 
 function sanitizeSettingsRequest(body: unknown): UpdateSettingsRequest | null {

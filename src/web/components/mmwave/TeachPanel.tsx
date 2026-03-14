@@ -84,8 +84,9 @@ export function TeachPanel({
         <span className="status-pill">{cornerSamples.length} captured corners</span>
       </div>
       <div className="teach-heat-grid">
-        {(["area1", "area2", "area3", "area4"] as AreaSlot[]).map((slot) => {
+        {(() => {
           const max = Math.max(1, ...Object.values(hitCounts));
+          return (["area1", "area2", "area3", "area4"] as AreaSlot[]).map((slot) => {
           const ratio = hitCounts[slot] / max;
           return (
             <div className="teach-heat-card" key={slot}>
@@ -97,7 +98,8 @@ export function TeachPanel({
               </div>
             </div>
           );
-        })}
+        });
+        })()}
       </div>
       <div className="teach-summary">
         <span>{strongestArea(hitCounts, areaLabels)}</span>

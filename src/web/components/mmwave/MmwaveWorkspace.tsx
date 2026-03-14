@@ -6,7 +6,6 @@ import {
   createMmwaveProfile,
   deleteMmwaveProfile,
   fetchMmwaveProfiles,
-  fetchMmwaveStudio,
   importMmwaveProfiles,
   mmwaveClearInterference,
   mmwaveClearStay,
@@ -365,14 +364,11 @@ function MmwaveWorkspace() {
   }
 
   useEffect(() => {
-    Promise.all([fetchMmwaveStudio(), fetchMmwaveProfiles()])
-      .then(([snapshot, profileList]) => {
+    fetchMmwaveProfiles()
+      .then((profileList) => {
         startTransition(() => {
           const sortedProfiles = sortProfiles(profileList);
-          setBridge(snapshot.bridge);
-          setDevices(snapshot.devices);
           setProfiles(sortedProfiles);
-          setSelectedName((current) => current ?? snapshot.devices[0]?.meta.friendlyName ?? null);
           setSelectedProfileId((current) => current ?? sortedProfiles[0]?.id ?? null);
         });
       })

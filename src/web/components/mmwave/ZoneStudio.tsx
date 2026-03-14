@@ -495,16 +495,19 @@ export function ZoneStudio({
             device.settings.areaOccupancy,
             heatCounts
           )}
-          {cornerTeachRect ? (
-            <rect
-              x={rectToSvg(cornerTeachRect, bounds).x}
-              y={rectToSvg(cornerTeachRect, bounds).y}
-              width={rectToSvg(cornerTeachRect, bounds).width}
-              height={rectToSvg(cornerTeachRect, bounds).height}
-              className="corner-draft-rect"
-              rx="18"
-            />
-          ) : null}
+          {cornerTeachRect ? (() => {
+            const draft = rectToSvg(cornerTeachRect, bounds);
+            return (
+              <rect
+                x={draft.x}
+                y={draft.y}
+                width={draft.width}
+                height={draft.height}
+                className="corner-draft-rect"
+                rx="18"
+              />
+            );
+          })() : null}
           {cornerTeachPoints.length > 0 ? renderCornerTeachPoints(cornerTeachPoints, bounds) : null}
           {device.targetTrails.length > 0 ? renderTargetTrails(device.targetTrails, bounds) : null}
           {device.supportsTargetDots ? renderTargetDots(device.targetPoints, bounds) : null}
