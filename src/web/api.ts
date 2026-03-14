@@ -85,26 +85,26 @@ function downloadNameFromDisposition(value: string | null, fallback: string): st
 }
 
 export async function fetchHealth(): Promise<HealthResponse> {
-  return parseResponse<HealthResponse>(await fetch("/api/health", { cache: "no-store" }));
+  return parseResponse<HealthResponse>(await fetch("api/health"));
 }
 
 export async function fetchBlueprintImageStatus(blueprintId: string): Promise<BlueprintImageStatus> {
   return parseResponse<BlueprintImageStatus>(
-    await fetch(`/api/blueprints/${encodeURIComponent(blueprintId)}/image-status`)
+    await fetch(`api/blueprints/${encodeURIComponent(blueprintId)}/image-status`)
   );
 }
 
 export async function fetchSnapshot(): Promise<StudioSnapshot> {
-  return parseResponse<StudioSnapshot>(await fetch("/api/snapshot", { cache: "no-store" }));
+  return parseResponse<StudioSnapshot>(await fetch("api/snapshot"));
 }
 
 export async function fetchAuthStatus(): Promise<AuthStatusResponse> {
-  return parseResponse<AuthStatusResponse>(await fetch("/api/auth/status", { cache: "no-store" }));
+  return parseResponse<AuthStatusResponse>(await fetch("api/auth/status", { cache: "no-store" }));
 }
 
 export async function createAuthSession(body: AuthSessionRequest): Promise<AuthStatusResponse> {
   return parseResponse<AuthStatusResponse>(
-    await fetch("/api/auth/session", {
+    await fetch("api/auth/session", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body)
@@ -114,24 +114,24 @@ export async function createAuthSession(body: AuthSessionRequest): Promise<AuthS
 
 export async function clearAuthSession(): Promise<AuthStatusResponse> {
   return parseResponse<AuthStatusResponse>(
-    await fetch("/api/auth/session", {
+    await fetch("api/auth/session", {
       method: "DELETE"
     })
   );
 }
 
 export async function fetchDiscovery(): Promise<DiscoveryCandidate[]> {
-  const response = await parseResponse<{ candidates: DiscoveryCandidate[] }>(await fetch("/api/discovery"));
+  const response = await parseResponse<{ candidates: DiscoveryCandidate[] }>(await fetch("api/discovery"));
   return response.candidates;
 }
 
 export async function fetchAutomations(): Promise<AutomationSummary[]> {
-  const response = await parseResponse<{ automations: AutomationSummary[] }>(await fetch("/api/automations"));
+  const response = await parseResponse<{ automations: AutomationSummary[] }>(await fetch("api/automations"));
   return response.automations;
 }
 
 export async function fetchLearning(): Promise<LearningLibraryResponse> {
-  return parseResponse<LearningLibraryResponse>(await fetch("/api/learning"));
+  return parseResponse<LearningLibraryResponse>(await fetch("api/learning"));
 }
 
 export async function startLearningSession(body: {
@@ -141,7 +141,7 @@ export async function startLearningSession(body: {
   label?: string;
 }): Promise<void> {
   await parseResponse(
-    await fetch("/api/learning/start", {
+    await fetch("api/learning/start", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body)
@@ -151,7 +151,7 @@ export async function startLearningSession(body: {
 
 export async function stopLearningSession(): Promise<void> {
   await parseResponse(
-    await fetch("/api/learning/stop", {
+    await fetch("api/learning/stop", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: "{}"
@@ -161,7 +161,7 @@ export async function stopLearningSession(): Promise<void> {
 
 export async function clearLearningLibrary(): Promise<void> {
   await parseResponse(
-    await fetch("/api/learning/clear", {
+    await fetch("api/learning/clear", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: "{}"
@@ -171,13 +171,13 @@ export async function clearLearningLibrary(): Promise<void> {
 
 export async function fetchDeviceProperties(deviceId: string): Promise<DevicePropertiesResponse> {
   return parseResponse<DevicePropertiesResponse>(
-    await fetch(`/api/devices/${encodeURIComponent(deviceId)}/properties`)
+    await fetch(`api/devices/${encodeURIComponent(deviceId)}/properties`)
   );
 }
 
 export async function controlEntity(entityId: string, action: string, value?: unknown): Promise<void> {
   await parseResponse(
-    await fetch("/api/entities/control", {
+    await fetch("api/entities/control", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ entityId, action, value })
@@ -194,7 +194,7 @@ export async function exportAutomation(body: {
   alias?: string;
 }): Promise<void> {
   await parseResponse(
-    await fetch("/api/automations/export", {
+    await fetch("api/automations/export", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body)
@@ -203,7 +203,7 @@ export async function exportAutomation(body: {
 }
 
 export async function exportBlueprintPackage(config: SwitchManagerConfig): Promise<string> {
-  const response = await fetch("/api/blueprints/export-package", {
+  const response = await fetch("api/blueprints/export-package", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ config } satisfies SaveConfigRequest)
@@ -237,7 +237,7 @@ export async function uploadBlueprintImageOverride(
 ): Promise<BlueprintImageStatus> {
   const imageBase64 = await blobToBase64(image);
   return parseResponse<BlueprintImageStatus>(
-    await fetch(`/api/blueprints/${encodeURIComponent(blueprintId)}/image-override`, {
+    await fetch(`api/blueprints/${encodeURIComponent(blueprintId)}/image-override`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -250,15 +250,24 @@ export async function uploadBlueprintImageOverride(
 
 export async function deleteBlueprintImageOverride(blueprintId: string): Promise<BlueprintImageStatus> {
   return parseResponse<BlueprintImageStatus>(
-    await fetch(`/api/blueprints/${encodeURIComponent(blueprintId)}/image-override`, {
+    await fetch(`api/blueprints/${encodeURIComponent(blueprintId)}/image-override`, {
       method: "DELETE"
     })
   );
 }
 
+export async function fetchDeviceImage(deviceId: string): Promise<Blob> {
+  const response = await fetch(`api/devices/${encodeURIComponent(deviceId)}/image`);
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({})) as { error?: string };
+    throw new Error(body.error ?? "Device image not available");
+  }
+  return response.blob();
+}
+
 export async function saveConfig(config: SwitchManagerConfig): Promise<SwitchManagerConfig> {
   const response = await parseResponse<{ config: SwitchManagerConfig }>(
-    await fetch("/api/configs/save", {
+    await fetch("api/configs/save", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ config } satisfies SaveConfigRequest)
@@ -269,7 +278,7 @@ export async function saveConfig(config: SwitchManagerConfig): Promise<SwitchMan
 
 export async function setConfigEnabled(id: string, enabled: boolean): Promise<void> {
   await parseResponse(
-    await fetch(`/api/configs/${encodeURIComponent(id)}/enabled`, {
+    await fetch(`api/configs/${encodeURIComponent(id)}/enabled`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ enabled })
@@ -279,7 +288,7 @@ export async function setConfigEnabled(id: string, enabled: boolean): Promise<vo
 
 export async function deleteConfig(id: string): Promise<void> {
   await parseResponse(
-    await fetch(`/api/configs/${encodeURIComponent(id)}`, {
+    await fetch(`api/configs/${encodeURIComponent(id)}`, {
       method: "DELETE"
     })
   );

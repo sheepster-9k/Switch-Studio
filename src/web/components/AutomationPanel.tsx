@@ -45,7 +45,7 @@ export function AutomationPanel(props: AutomationPanelProps) {
           <h3>Import / Export</h3>
         </div>
         <button className="button" disabled={!draft} onClick={onExportCurrent} type="button">
-          Export current slot
+          Export current action
         </button>
       </div>
 
@@ -56,11 +56,11 @@ export function AutomationPanel(props: AutomationPanelProps) {
       <div className="toggle-strip">
         <div className="inline-toggle">
           <div>
-            <strong>Only active switch</strong>
+            <strong>Current switch only</strong>
             <p>
               {draft?.name
                 ? `Show automation matches for ${draft.name} first.`
-                : "Select a switch before importing or exporting automation slots."}
+                : "Select a switch first."}
             </p>
           </div>
           <button
@@ -118,7 +118,7 @@ export function AutomationPanel(props: AutomationPanelProps) {
             </div>
             {automation.description ? <p className="stack-card__meta">{automation.description}</p> : null}
             {automation.actions.length === 0 ? (
-              <p className="stack-card__meta">This automation does not expose an importable action sequence yet.</p>
+              <p className="stack-card__meta">This automation has no importable action sequence.</p>
             ) : null}
           </div>
         ))}

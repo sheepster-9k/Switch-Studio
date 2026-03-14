@@ -58,7 +58,7 @@ export function VirtualActionEditor(props: VirtualActionEditorProps) {
           </div>
         </div>
         <div className="warning-block">
-          Select a button with one native action to configure synthetic multi-press.
+          Virtual multi-press is only available for buttons with a single native action.
         </div>
       </section>
     );
@@ -90,7 +90,7 @@ export function VirtualActionEditor(props: VirtualActionEditorProps) {
 
       <div className="field-grid">
         <label className="field">
-          <span>Wait window (ms)</span>
+          <span>Press window (ms)</span>
           <input
             min={150}
             onChange={(event) => onVirtualMultiPressWindowChange(Number(event.target.value) || 450)}

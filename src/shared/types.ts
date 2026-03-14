@@ -27,6 +27,7 @@ export interface SwitchManagerBlueprint {
   isMqtt: boolean;
   hasImage: boolean;
   info: string | null;
+  blueprintType: "switch" | "sensor";
   buttons: SwitchManagerBlueprintButton[];
 }
 
@@ -120,6 +121,8 @@ export interface DeviceSummary {
   manufacturer: string | null;
   model: string | null;
   entityIds: string[];
+  /** Flattened HA device-registry identifiers and connections (e.g. IEEE address, Z-Wave node ref). */
+  identifiers: string[];
 }
 
 export interface EntitySummary {
@@ -130,6 +133,8 @@ export interface EntitySummary {
   deviceId: string | null;
   state: string | null;
   icon: string | null;
+  /** Relative HA URL for a device image, when provided by the integration (ZHA, Z-Wave JS, etc.). */
+  entityPicture: string | null;
   disabled: boolean;
   hidden: boolean;
 }
@@ -175,7 +180,11 @@ export interface DiscoveryCandidate {
   areaId: string | null;
   deviceId: string | null;
   entityIds: string[];
+  /** Flattened HA device-registry identifiers (IEEE address, Z-Wave node ref, etc.). */
+  identifiers: string[];
   probableProtocol: string | null;
+  /** Identifier pre-filled from device registry data; may be empty if no confident match. */
+  suggestedIdentifier: string;
   suggestedBlueprintIds: string[];
   relatedAutomationIds: string[];
 }

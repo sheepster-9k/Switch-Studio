@@ -575,6 +575,10 @@ button:focus-visible,
   margin: 0.15rem 0 0;
 }
 
+.accordion-toggle--open {
+  background: rgba(213, 195, 131, 0.06);
+}
+
 .accordion-toggle__icon {
   align-items: center;
   background: rgba(212, 110, 255, 0.14);
@@ -1543,4 +1547,45 @@ button:focus-visible,
   background: rgba(0, 229, 192, 0.14);
   border-color: rgba(0, 229, 192, 0.42);
   border-style: solid;
+}
+
+/* Sensor panel */
+.sensor-layout {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: auto 1fr;
+}
+
+.sensor-layout--no-image {
+  grid-template-columns: 1fr;
+}
+
+.sensor-image-frame {
+  align-self: start;
+  border-radius: 16px;
+  overflow: hidden;
+  width: min(12rem, 40%);
+}
+
+.sensor-image-frame img {
+  display: block;
+  height: auto;
+  width: 100%;
+}
+
+.sensor-triggers {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.sensor-triggers__head {
+  align-items: center;
+  display: flex;
+  gap: 0.75rem;
+  justify-content: space-between;
+}
+
+.action-tabs--vertical {
+  grid-template-columns: 1fr;
 }

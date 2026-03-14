@@ -36,13 +36,13 @@ export function LearnPanel(props: LearnPanelProps) {
 
       <p className="panel-copy">
         {draft && selectedBlueprint
-          ? `Listening against ${selectedBlueprint.name}${draft.identifier ? ` for identifier ${draft.identifier}` : ""}.`
-          : "Select or create a draft first, then start learning to capture raw switch presses and identifiers."}
+          ? `Listening for presses on ${selectedBlueprint.name}${draft.identifier ? ` (identifier: ${draft.identifier})` : ""}.`
+          : "Select or create a switch draft first, then start listening to capture button presses and identifiers."}
       </p>
 
       <div className="inline-actions">
         <button className="button" disabled={!draft || !selectedBlueprint || active} onClick={onStart} type="button">
-          Start learn
+          Start listening
         </button>
         <button className="button" disabled={!active} onClick={onStop} type="button">
           Stop
@@ -52,6 +52,11 @@ export function LearnPanel(props: LearnPanelProps) {
         </button>
       </div>
 
+      {(learning?.events?.length ?? 0) > 12 ? (
+        <p className="panel-copy">
+          Showing 12 of {learning!.events.length} captured events.
+        </p>
+      ) : null}
       <div className="stack-list">
         {(learning?.events ?? []).slice(0, 12).map((event) => (
           <div className="stack-card" key={`${event.capturedAt}-${event.identifier}-${event.button}-${event.action}`}>

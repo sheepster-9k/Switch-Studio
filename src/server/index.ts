@@ -5,8 +5,8 @@ import { fileURLToPath } from "node:url";
 import { gzipSync } from "node:zlib";
 
 import fastifyStatic from "@fastify/static";
-import Fastify, { type FastifyReply, type FastifyRequest } from "fastify";
-import { stringify as stringifyYaml } from "yaml";
+import Fastify from "fastify";
+import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 
 import type {
   AuthSessionRequest,
@@ -27,14 +27,14 @@ import type {
   StudioSnapshot,
   SwitchManagerBlueprint,
   SwitchManagerButtonLayoutOverride,
-  SwitchManagerConfig,
-  SwitchManagerVirtualAction
+  SwitchManagerConfig
 } from "../shared/types.js";
-import { StudioAuthManager } from "./auth.js";
 import { loadConfig, type StudioConfig } from "./config.js";
 import { HomeAssistantClient } from "./haClient.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+
+type StudioBackendMode = "websocket" | "none";
 
 interface SwitchManagerLearningStoreFile {
   data?: {
@@ -126,6 +126,30 @@ function normalizeBlueprint(raw: Record<string, unknown>): SwitchManagerBlueprin
     }))
   }));
 
+  const explicitType = asNullableString(raw.type);
+  let blueprintType: "switch" | "sensor";
+  if (explicitType === "sensor") {
+    blueprintType = "sensor";
+  } else if (explicitType === "switch") {
+    blueprintType = "switch";
+  } else {
+    // Infer from blueprint content: sensor blueprints have no positional button geometry
+    // and their service/event_type contains sensor-domain keywords.
+    const service = asString(raw.service).toLowerCase();
+    const eventType = asString(raw.event_type).toLowerCase();
+    const hasSensorKeyword =
+      service.includes("binary_sensor") ||
+      service.includes("motion") ||
+      service.includes("occupancy") ||
+      eventType.includes("binary_sensor") ||
+      eventType.includes("motion") ||
+      eventType.includes("occupancy");
+    const hasGeometry = buttons.some(
+      (b) => typeof b.x === "number" || typeof b.y === "number" || typeof b.d === "string"
+    );
+    blueprintType = !hasGeometry && hasSensorKeyword ? "sensor" : "switch";
+  }
+
   return {
     id: asString(raw.id),
     name: asString(raw.name),
@@ -135,6 +159,7 @@ function normalizeBlueprint(raw: Record<string, unknown>): SwitchManagerBlueprin
     isMqtt: asBoolean(raw.is_mqtt, asString(raw.event_type) === "mqtt"),
     hasImage: asBoolean(raw.has_image),
     info: asNullableString(raw.info),
+    blueprintType,
     buttons
   };
 }
@@ -553,21 +578,25 @@ function fallbackBlueprintDefinition(blueprint: SwitchManagerBlueprint): Record<
   };
 }
 
+function resolveHaPath(config: StudioConfig, relativePath: string): string | null {
+  return config.haConfigPath ? `${config.haConfigPath}/${relativePath}` : null;
+}
+
 async function loadRawBlueprintDefinition(
-  client: HomeAssistantClient,
+  config: StudioConfig,
   blueprintId: string
 ): Promise<Record<string, unknown> | null> {
   const safeBlueprintId = sanitizeBlueprintId(blueprintId);
-  if (!safeBlueprintId) {
+  const filePath = safeBlueprintId
+    ? resolveHaPath(config, `${config.switchManagerBlueprintDir}/${safeBlueprintId}.yaml`)
+    : null;
+  if (!filePath) {
     return null;
   }
 
   try {
-    const result = await client.call<{ definition?: Record<string, unknown> | null }>({
-      type: "switch_manager/blueprints/source",
-      blueprint_id: safeBlueprintId
-    });
-    const parsed = result.definition;
+    const content = await readFile(filePath, "utf8");
+    const parsed = parseYaml(content);
     return isRecord(parsed) ? parsed : null;
   } catch {
     return null;
@@ -859,7 +888,7 @@ async function buildBlueprintExportPackage(args: {
   draft: SwitchManagerConfig;
   blueprint: SwitchManagerBlueprint;
 }): Promise<{ content: Buffer; fileName: string }> {
-  const rawBlueprint = await loadRawBlueprintDefinition(args.wsClient, args.blueprint.id);
+  const rawBlueprint = await loadRawBlueprintDefinition(args.config, args.blueprint.id);
   const exportWarnings: string[] = [];
   const exportDefinition = applyLayoutOverridesToBlueprintDefinition(
     rawBlueprint ?? fallbackBlueprintDefinition(args.blueprint),
@@ -920,6 +949,10 @@ async function buildBlueprintExportPackage(args: {
     fileName: `switch-manager-blueprint-${fileStem}.tar.gz`,
     content: gzipSync(buildTarArchive(entries))
   };
+}
+
+function preferredBackend(wsClient: HomeAssistantClient): StudioBackendMode {
+  return wsClient.hasToken ? "websocket" : "none";
 }
 
 async function buildSnapshotWithWebsocket(client: HomeAssistantClient): Promise<StudioSnapshot> {
@@ -1019,6 +1052,7 @@ function buildSnapshotFromRawData(input: {
         deviceId: entity.deviceId,
         state: asNullableString(state?.state),
         icon: asNullableString(rawEntity?.icon),
+        entityPicture: state && isRecord(state.attributes) ? asNullableString(state.attributes.entity_picture) : null,
         disabled: Boolean(rawEntity?.disabled_by),
         hidden: Boolean(rawEntity?.hidden_by)
       };
@@ -1059,7 +1093,8 @@ function buildSnapshotFromRawData(input: {
       areaId: device.areaId,
       manufacturer: device.manufacturer,
       model: device.model,
-      entityIds: device.entityIds
+      entityIds: device.entityIds,
+      identifiers: device.identifiers
     }))
     .sort((left, right) => left.name.localeCompare(right.name));
 
@@ -1083,14 +1118,16 @@ function buildSnapshotFromRawData(input: {
   };
 }
 
-async function loadLearningStore(
-  client: HomeAssistantClient
-): Promise<SwitchManagerLearningStoreFile> {
+async function loadLearningStore(config: StudioConfig): Promise<SwitchManagerLearningStoreFile> {
+  const filePath = resolveHaPath(config, config.switchManagerLearningStorePath);
+  if (!filePath) {
+    return { active_session: null, library: [] };
+  }
+
   try {
-    const result = await client.call<SwitchManagerLearningStoreFile>({
-      type: "switch_manager/learning"
-    });
-    const data = isRecord(result.data) ? result.data : result;
+    const content = await readFile(filePath, "utf8");
+    const parsed = JSON.parse(content) as SwitchManagerLearningStoreFile;
+    const data = isRecord(parsed.data) ? parsed.data : parsed;
     return {
       active_session: isRecord(data.active_session) ? data.active_session : null,
       library: Array.isArray(data.library) ? data.library : []
@@ -1285,14 +1322,18 @@ function inferAutomationMatch(
   };
 }
 
-async function loadAutomationsWithWebsocket(
-  client: HomeAssistantClient,
+async function loadAutomations(
+  config: StudioConfig,
   snapshot: StudioSnapshot | null
 ): Promise<AutomationSummary[]> {
-  const result = await client.call<{ automations?: Array<Record<string, unknown>> }>({
-    type: "switch_manager/automations/list"
-  });
-  const entries = Array.isArray(result.automations) ? result.automations : [];
+  const filePath = resolveHaPath(config, config.automationsPath);
+  if (!filePath) {
+    throw new Error("HA_CONFIG_PATH is not configured");
+  }
+
+  const content = await readFile(filePath, "utf8");
+  const parsed = parseYaml(content) as unknown;
+  const entries = Array.isArray(parsed) ? parsed : [];
   return entries
     .filter((entry): entry is Record<string, unknown> => isRecord(entry))
     .map((entry) => normalizeAutomationEntry(entry, snapshot))
@@ -1346,6 +1387,45 @@ function automationReferencesEntities(automation: AutomationSummary, entityIds: 
   return [...entitySet].some((entityId) => haystack.includes(entityId));
 }
 
+function inferSuggestedIdentifier(device: DeviceSummary): string {
+  const ids = device.identifiers;
+
+  // ZHA: contains "zha" and an IEEE address like 00:11:22:33:44:55:66:77
+  if (ids.includes("zha")) {
+    const ieee = ids.find((id) => /^([0-9a-f]{2}:){7}[0-9a-f]{2}$/i.test(id));
+    if (ieee) {
+      return ieee;
+    }
+  }
+
+  // Z-Wave JS: contains "zwave_js" and a home_id-node_id string
+  if (ids.includes("zwave_js")) {
+    const nodeRef = ids.find((id) => /^\d+-\d+$/.test(id));
+    if (nodeRef) {
+      // SM z-wave blueprints use the node_id (the part after the last dash)
+      const nodeId = nodeRef.split("-").at(-1);
+      if (nodeId) {
+        return nodeId;
+      }
+    }
+  }
+
+  // Matter: contains "matter" and a numeric node id
+  if (ids.includes("matter")) {
+    const nodeId = ids.find((id) => /^\d+$/.test(id) && id.length > 4);
+    if (nodeId) {
+      return nodeId;
+    }
+  }
+
+  // MQTT / Zigbee2MQTT: HA marks Z2M devices with "mqtt" as the integration domain in their identifiers
+  if (ids.includes("mqtt") && device.name) {
+    return `zigbee2mqtt/${device.name}/action`;
+  }
+
+  return "";
+}
+
 function buildDiscoveryCandidates(
   snapshot: StudioSnapshot,
   automations: AutomationSummary[]
@@ -1376,17 +1456,21 @@ function buildDiscoveryCandidates(
         areaId: device.areaId,
         deviceId: device.id,
         entityIds: device.entityIds,
+        identifiers: device.identifiers,
         probableProtocol,
+        suggestedIdentifier: inferSuggestedIdentifier(device),
         suggestedBlueprintIds,
         relatedAutomationIds
       };
     })
     .filter((candidate) => {
-      const hasSwitchLikeEntity = candidate.entityIds.some((entityId) =>
-        ["event.", "button.", "switch.", "select.", "number."].some((prefix) => entityId.startsWith(prefix)) ||
+      const hasControllableLikeEntity = candidate.entityIds.some((entityId) =>
+        ["event.", "button.", "switch.", "select.", "number.", "binary_sensor."].some((prefix) =>
+          entityId.startsWith(prefix)
+        ) ||
         /action|scene|button|switch|remote|dimmer/i.test(entityId)
       );
-      return hasSwitchLikeEntity || candidate.suggestedBlueprintIds.length > 0 || candidate.relatedAutomationIds.length > 0;
+      return hasControllableLikeEntity || candidate.suggestedBlueprintIds.length > 0 || candidate.relatedAutomationIds.length > 0;
     })
     .sort((left, right) => {
       const rightScore = right.suggestedBlueprintIds.length + right.relatedAutomationIds.length;
@@ -1481,25 +1565,21 @@ function normalizePropertyEntity(state: Record<string, unknown>): PropertyEntity
   };
 }
 
-async function loadDevicePropertiesWithWebsocket(
-  client: HomeAssistantClient,
+async function loadDeviceProperties(
+  wsClient: HomeAssistantClient,
   snapshot: StudioSnapshot,
   deviceId: string
 ): Promise<DevicePropertiesResponse> {
   const device = snapshot.devices.find((entry) => entry.id === deviceId) ?? null;
   if (!device) {
-    return {
-      device: null,
-      probableProtocol: null,
-      entities: []
-    };
+    return { device: null, probableProtocol: null, entities: [] };
   }
 
-  const stateResults = await client.call<Array<Record<string, unknown>>>({ type: "get_states" });
+  const allStates = await wsClient.call<Array<Record<string, unknown>>>({ type: "get_states" });
   const stateMap = new Map(
-    stateResults
-      .filter((entry): entry is Record<string, unknown> => Boolean(entry))
-      .map((entry) => [asString(entry.entity_id), entry] satisfies [string, Record<string, unknown>])
+    allStates
+      .filter((s): s is Record<string, unknown> => isRecord(s) && typeof s.entity_id === "string")
+      .map((s) => [s.entity_id as string, s])
   );
 
   return {
@@ -1514,7 +1594,7 @@ async function loadDevicePropertiesWithWebsocket(
 }
 
 async function callEntityControl(
-  client: HomeAssistantClient,
+  wsClient: HomeAssistantClient,
   entityId: string,
   action: string,
   value?: unknown
@@ -1523,19 +1603,19 @@ async function callEntityControl(
   const target = { entity_id: entityId };
 
   if (action === "toggle" || action === "turn_on" || action === "turn_off") {
-    await client.callService(domain, action, undefined, target);
+    await wsClient.callService(domain, action, undefined, target);
     return;
   }
   if (action === "press") {
-    await client.callService(domain, "press", undefined, target);
+    await wsClient.callService(domain, "press", undefined, target);
     return;
   }
   if (action === "select_option") {
-    await client.callService(domain, "select_option", { option: value }, target);
+    await wsClient.callService(domain, "select_option", { option: value }, target);
     return;
   }
   if (action === "set_value") {
-    await client.callService(domain, "set_value", { value }, target);
+    await wsClient.callService(domain, "set_value", { value }, target);
     return;
   }
 
@@ -1562,17 +1642,46 @@ function buildExportAutomation(
     alias: alias ?? `${configEntry.name} / Button ${buttonIndex + 1} / ${actionTitle}`,
     description: `Exported from Switch Manager Studio for ${configEntry.name}`,
     triggers: [
-      {
-        trigger: "event",
-        event_type: "switch_manager_action",
-        event_data: {
-          switch_id: configEntry.id,
-          button: buttonIndex,
-          press_count: pressCount,
-          virtual,
-          ...(!virtual ? { action: actionIndex } : {})
-        }
-      }
+      virtual
+        ? {
+            trigger: "event",
+            event_type: "switch_manager_virtual_action",
+            event_data: {
+              switch_id: configEntry.id,
+              button: buttonIndex,
+              press_count: pressCount
+            }
+          }
+        : {
+            trigger: "event",
+            event_type: blueprint.eventType,
+            ...(blueprint.identifierKey
+              ? { event_data: { [blueprint.identifierKey]: configEntry.identifier } }
+              : {}),
+            ...(blueprint.buttons[buttonIndex]?.conditions?.length
+              ? {
+                  event_data: {
+                    ...(blueprint.identifierKey ? { [blueprint.identifierKey]: configEntry.identifier } : {}),
+                    ...Object.fromEntries(
+                      blueprint.buttons[buttonIndex].conditions?.map((cond) => [cond.key, cond.value]) ?? []
+                    )
+                  }
+                }
+              : {}),
+            ...(blueprint.buttons[buttonIndex]?.actions[actionIndex]?.conditions?.length
+              ? {
+                  event_data: {
+                    ...(blueprint.identifierKey ? { [blueprint.identifierKey]: configEntry.identifier } : {}),
+                    ...Object.fromEntries(
+                      blueprint.buttons[buttonIndex].conditions?.map((cond) => [cond.key, cond.value]) ?? []
+                    ),
+                    ...Object.fromEntries(
+                      blueprint.buttons[buttonIndex].actions[actionIndex]?.conditions?.map((cond) => [cond.key, cond.value]) ?? []
+                    )
+                  }
+                }
+              : {})
+          }
     ],
     conditions: [],
     actions: sequence,
@@ -1580,8 +1689,9 @@ function buildExportAutomation(
   };
 }
 
-async function exportAutomationWithWebsocket(
-  client: HomeAssistantClient,
+async function exportAutomation(
+  wsClient: HomeAssistantClient,
+  config: StudioConfig,
   snapshot: StudioSnapshot,
   payload: {
     configId: string;
@@ -1620,10 +1730,16 @@ async function exportAutomationWithWebsocket(
     sequence,
     payload.alias
   );
-  await client.call({
-    type: "switch_manager/automations/export",
-    automation: exported
-  });
+
+  const filePath = resolveHaPath(config, config.automationsPath);
+  if (!filePath) {
+    throw new Error("HA_CONFIG_PATH is not configured");
+  }
+
+  const currentContent = await readFile(filePath, "utf8");
+  const nextContent = `${currentContent.replace(/\s*$/, "\n")}${stringifyYaml([exported])}`;
+  await writeFile(filePath, `${nextContent.replace(/\s*$/, "\n")}`, "utf8");
+  await wsClient.callService("automation", "reload");
 
   return normalizeAutomationEntry(exported, snapshot);
 }
@@ -1635,8 +1751,8 @@ function managedAreaIdFromConfig(configEntry: SwitchManagerConfig): string | nul
   return asNullableString(configEntry.metadata.areaId) ?? null;
 }
 
-async function syncConfigAreaWithWebsocket(
-  client: HomeAssistantClient,
+async function syncConfigArea(
+  wsClient: HomeAssistantClient,
   configEntry: SwitchManagerConfig
 ): Promise<void> {
   const areaId = managedAreaIdFromConfig(configEntry);
@@ -1645,11 +1761,7 @@ async function syncConfigAreaWithWebsocket(
   }
 
   if (configEntry.deviceId) {
-    await client.call({
-      type: "config/device_registry/update",
-      device_id: configEntry.deviceId,
-      area_id: areaId
-    });
+    await wsClient.updateDeviceArea(configEntry.deviceId, areaId);
     return;
   }
 
@@ -1659,29 +1771,8 @@ async function syncConfigAreaWithWebsocket(
     null;
 
   if (entityId) {
-    await client.call({
-      type: "config/entity_registry/update",
-      entity_id: entityId,
-      area_id: areaId
-    });
+    await wsClient.updateEntityArea(entityId, areaId);
   }
-}
-
-async function saveConfigWithWebsocket(
-  client: HomeAssistantClient,
-  draft: SwitchManagerConfig
-): Promise<SwitchManagerConfig> {
-  const result = await client.call<{ config?: Record<string, unknown>; config_id?: string }>({
-    type: "switch_manager/config/save",
-    config: normalizeConfigForSave(draft)
-  });
-  const configId = asString(result.config_id, draft.id);
-  const savedConfig = normalizeConfig({
-    id: configId,
-    ...(isRecord(result.config) ? result.config : {})
-  });
-  await syncConfigAreaWithWebsocket(client, savedConfig);
-  return savedConfig;
 }
 
 async function serveLocalBlueprintImage(
@@ -1703,151 +1794,119 @@ async function serveLocalBlueprintImage(
 
 async function main(): Promise<void> {
   const config = loadConfig();
-  const authManager = new StudioAuthManager(config);
+  const wsClient = new HomeAssistantClient(config);
   const app = Fastify({ logger: true });
   const webRoot = resolve(__dirname, "../web");
 
-  async function withClient<T>(
-    request: FastifyRequest,
-    reply: FastifyReply,
-    task: (client: HomeAssistantClient) => Promise<T>
-  ): Promise<T | { error: string }> {
-    const session = authManager.getSession(request, reply);
-    if (!session) {
-      return authManager.unauthorized(reply);
-    }
-
-    const client = new HomeAssistantClient({
-      haBaseUrl: session.haBaseUrl,
-      haToken: session.accessToken,
-      requestTimeoutMs: config.requestTimeoutMs
-    });
-
-    try {
-      return await task(client);
-    } finally {
-      client.close();
-    }
-  }
-
   app.get("/api/auth/status", async (request, reply) => {
     reply.header("Cache-Control", "no-store");
-    return authManager.status(request, reply, config);
+    return {
+      authenticated: wsClient.hasToken,
+      haBaseUrl: wsClient.hasToken ? wsClient.baseUrl : null,
+      defaultHaBaseUrl: config.haBaseUrl
+    };
   });
 
-  app.post("/api/auth/session", async (request, reply) => {
-    reply.header("Cache-Control", "no-store");
-    const body = request.body as Partial<AuthSessionRequest> | undefined;
-    if (typeof body?.haBaseUrl !== "string" || !body.haBaseUrl.trim()) {
-      reply.code(400);
-      return { error: "haBaseUrl is required" };
+  app.get("/api/health", async (request, reply) => {
+    if (!wsClient.hasToken) {
+      reply.code(503);
+      return {
+        ok: false,
+        haBaseUrl: config.haBaseUrl,
+        hasToken: false,
+        error: "HA_TOKEN is not configured"
+      };
     }
-    if (typeof body?.accessToken !== "string" || !body.accessToken.trim()) {
-      reply.code(400);
-      return { error: "accessToken is required" };
-    }
-
-    const client = new HomeAssistantClient({
-      haBaseUrl: body.haBaseUrl.trim().replace(/\/+$/, ""),
-      haToken: body.accessToken.trim(),
-      requestTimeoutMs: config.requestTimeoutMs
-    });
 
     try {
-      await client.call({ type: "get_config" });
-      const session = authManager.createSession(reply, {
-        haBaseUrl: client.baseUrl,
-        accessToken: body.accessToken
-      });
+      const result = await wsClient.call<{ version: string }>({ type: "get_config" });
       return {
-        authenticated: true,
-        haBaseUrl: session.haBaseUrl,
-        defaultHaBaseUrl: config.defaultHaBaseUrl
+        ok: true,
+        haBaseUrl: wsClient.baseUrl,
+        hasToken: true,
+        version: result.version
       };
     } catch (error) {
       request.log.error(error);
-      reply.code(401);
-      return { error: error instanceof Error ? error.message : String(error) };
-    } finally {
-      client.close();
+      reply.code(503);
+      return {
+        ok: false,
+        haBaseUrl: wsClient.baseUrl,
+        hasToken: true,
+        error: error instanceof Error ? error.message : String(error)
+      };
     }
   });
 
-  app.delete("/api/auth/session", async (request, reply) => {
-    reply.header("Cache-Control", "no-store");
-    authManager.clearSession(request, reply);
-    return authManager.status(request, reply, config);
+  app.get("/api/snapshot", async (request, reply) => {
+    if (preferredBackend(wsClient) === "none") {
+      reply.code(503);
+      return { error: "HA_TOKEN is not configured" };
+    }
+
+    try {
+      return await buildSnapshotWithWebsocket(wsClient);
+    } catch (error) {
+      request.log.error(error);
+      reply.code(503);
+      return { error: error instanceof Error ? error.message : String(error) };
+    }
   });
 
-  app.get("/api/health", async (request, reply) =>
-    withClient(request, reply, async (client) => {
-      try {
-        const result = await client.call<{ version: string }>({ type: "get_config" });
-        return {
-          ok: true,
-          haBaseUrl: client.baseUrl,
-          hasToken: true,
-          version: result.version
-        };
-      } catch (error) {
-        request.log.error(error);
-        reply.code(503);
-        return {
-          ok: false,
-          haBaseUrl: client.baseUrl,
-          hasToken: true,
-          error: error instanceof Error ? error.message : String(error)
-        };
-      }
-    })
-  );
+  app.get("/api/discovery", async (request, reply) => {
+    if (preferredBackend(wsClient) === "none") {
+      reply.code(503);
+      return { error: "HA_TOKEN is not configured" };
+    }
 
-  app.get("/api/snapshot", async (request, reply) =>
-    withClient(request, reply, async (client) => {
-      try {
-        return await buildSnapshotWithWebsocket(client);
-      } catch (error) {
-        request.log.error(error);
-        reply.code(503);
-        return {
-          error: error instanceof Error ? error.message : String(error)
-        };
+    try {
+      const snapshot = await buildSnapshotWithWebsocket(wsClient);
+      let automations: AutomationSummary[] = [];
+      if (config.haConfigPath) {
+        try {
+          automations = await loadAutomations(config, snapshot);
+        } catch {
+          // automations unavailable — discovery continues without them
+        }
       }
-    })
-  );
+      return { candidates: buildDiscoveryCandidates(snapshot, automations) };
+    } catch (error) {
+      request.log.error(error);
+      reply.code(400);
+      return { error: error instanceof Error ? error.message : String(error) };
+    }
+  });
 
-  app.get("/api/discovery", async (request, reply) =>
-    withClient(request, reply, async (client) => {
-      try {
-        const snapshot = await buildSnapshotWithWebsocket(client);
-        const automations = await loadAutomationsWithWebsocket(client, snapshot).catch(() => []);
-        return {
-          candidates: buildDiscoveryCandidates(snapshot, automations)
-        };
-      } catch (error) {
-        request.log.error(error);
-        reply.code(400);
-        return { error: error instanceof Error ? error.message : String(error) };
-      }
-    })
-  );
+  app.get("/api/automations", async (request, reply) => {
+    if (preferredBackend(wsClient) === "none") {
+      reply.code(503);
+      return { error: "HA_TOKEN is not configured" };
+    }
+    if (!config.haConfigPath) {
+      reply.code(501);
+      return { error: "Automation import/export requires HA_CONFIG_PATH" };
+    }
 
-  app.get("/api/automations", async (request, reply) =>
-    withClient(request, reply, async (client) => {
-      try {
-        const snapshot = await buildSnapshotWithWebsocket(client);
-        return {
-          automations: await loadAutomationsWithWebsocket(client, snapshot)
-        };
-      } catch (error) {
-        request.log.error(error);
-        reply.code(400);
-        return { error: error instanceof Error ? error.message : String(error) };
-      }
-    })
-  );
+    try {
+      const snapshot = await buildSnapshotWithWebsocket(wsClient);
+      return { automations: await loadAutomations(config, snapshot) };
+    } catch (error) {
+      request.log.error(error);
+      reply.code(400);
+      return { error: error instanceof Error ? error.message : String(error) };
+    }
+  });
 
   app.post("/api/automations/export", async (request, reply) => {
+    if (preferredBackend(wsClient) === "none") {
+      reply.code(503);
+      return { error: "HA_TOKEN is not configured" };
+    }
+    if (!config.haConfigPath) {
+      reply.code(501);
+      return { error: "Automation export requires HA_CONFIG_PATH" };
+    }
+
     const body = request.body as {
       configId?: string;
       buttonIndex?: number;
@@ -1873,31 +1932,34 @@ async function main(): Promise<void> {
       alias: body.alias
     };
 
-    return withClient(request, reply, async (client) => {
-      try {
-        const snapshot = await buildSnapshotWithWebsocket(client);
-        return {
-          automation: await exportAutomationWithWebsocket(client, snapshot, payload)
-        };
-      } catch (error) {
-        request.log.error(error);
-        reply.code(400);
-        return { error: error instanceof Error ? error.message : String(error) };
-      }
-    });
+    try {
+      const snapshot = await buildSnapshotWithWebsocket(wsClient);
+      return {
+        automation: await exportAutomation(wsClient, config, snapshot, {
+          configId: body.configId,
+          buttonIndex: body.buttonIndex,
+          actionIndex: body.actionIndex,
+          pressCount: body.pressCount,
+          virtual: body.virtual,
+          alias: body.alias
+        })
+      };
+    } catch (error) {
+      request.log.error(error);
+      reply.code(400);
+      return { error: error instanceof Error ? error.message : String(error) };
+    }
   });
 
   app.get("/api/blueprints/:id/image-status", async (request, reply) => {
     const params = request.params as { id: string };
-    return withClient(request, reply, async (client) => {
-      try {
-        return await loadBlueprintImageStatus(params.id, config, client);
-      } catch (error) {
-        request.log.error(error);
-        reply.code(400);
-        return { error: error instanceof Error ? error.message : String(error) };
-      }
-    });
+    try {
+      return await loadBlueprintImageStatus(params.id, config, wsClient);
+    } catch (error) {
+      request.log.error(error);
+      reply.code(400);
+      return { error: error instanceof Error ? error.message : String(error) };
+    }
   });
 
   app.post("/api/blueprints/:id/image-override", async (request, reply) => {
@@ -1910,46 +1972,47 @@ async function main(): Promise<void> {
     const imageBase64 = body.imageBase64;
     const sourceFileName = typeof body.sourceFileName === "string" ? body.sourceFileName : null;
 
-    return withClient(request, reply, async (client) => {
-      try {
-        const buffer = Buffer.from(imageBase64, "base64");
-        if (!buffer.length) {
-          throw new Error("Uploaded image content was empty");
-        }
-        if (!isPngBuffer(buffer)) {
-          throw new Error("Uploaded image must be converted to PNG before it reaches the server");
-        }
-
-        await saveBlueprintImageOverride(config.blueprintImageOverrideDir, params.id, buffer);
-        const status = await loadBlueprintImageStatus(params.id, config, client);
-        return {
-          ...status,
-          sourceFileName
-        };
-      } catch (error) {
-        request.log.error(error);
-        reply.code(400);
-        return { error: error instanceof Error ? error.message : String(error) };
+    try {
+      const buffer = Buffer.from(imageBase64, "base64");
+      if (!buffer.length) {
+        throw new Error("Uploaded image content was empty");
       }
-    });
+      if (!isPngBuffer(buffer)) {
+        throw new Error("Uploaded image must be converted to PNG before it reaches the server");
+      }
+
+      await saveBlueprintImageOverride(config.blueprintImageOverrideDir, params.id, buffer);
+      const status = await loadBlueprintImageStatus(params.id, config, wsClient);
+      return {
+        ...status,
+        sourceFileName
+      };
+    } catch (error) {
+      request.log.error(error);
+      reply.code(400);
+      return { error: error instanceof Error ? error.message : String(error) };
+    }
   });
 
   app.delete("/api/blueprints/:id/image-override", async (request, reply) => {
     const params = request.params as { id: string };
 
-    return withClient(request, reply, async (client) => {
-      try {
-        await removeBlueprintImageOverride(config.blueprintImageOverrideDir, params.id);
-        return await loadBlueprintImageStatus(params.id, config, client);
-      } catch (error) {
-        request.log.error(error);
-        reply.code(400);
-        return { error: error instanceof Error ? error.message : String(error) };
-      }
-    });
+    try {
+      await removeBlueprintImageOverride(config.blueprintImageOverrideDir, params.id);
+      return await loadBlueprintImageStatus(params.id, config, wsClient);
+    } catch (error) {
+      request.log.error(error);
+      reply.code(400);
+      return { error: error instanceof Error ? error.message : String(error) };
+    }
   });
 
   app.post("/api/blueprints/export-package", async (request, reply) => {
+    if (preferredBackend(wsClient) === "none") {
+      reply.code(503);
+      return { error: "Blueprint export requires HA_TOKEN" };
+    }
+
     const body = request.body as SaveConfigRequest | undefined;
     const draft = body?.config;
     if (!draft || typeof draft.blueprintId !== "string" || !draft.blueprintId.trim()) {
@@ -1957,55 +2020,69 @@ async function main(): Promise<void> {
       return { error: "config.blueprintId is required" };
     }
 
-    return withClient(request, reply, async (client) => {
-      try {
-        const snapshot = await buildSnapshotWithWebsocket(client);
-        const blueprint = snapshot.blueprints.find((entry) => entry.id === draft.blueprintId);
-        if (!blueprint) {
-          throw new Error(`Blueprint ${draft.blueprintId} was not found`);
-        }
-
-        const packageResult = await buildBlueprintExportPackage({
-          wsClient: client,
-          config,
-          draft,
-          blueprint
-        });
-
-        reply.header("Cache-Control", "no-store");
-        reply.header("Content-Disposition", `attachment; filename=\"${packageResult.fileName}\"`);
-        reply.header("Content-Length", String(packageResult.content.length));
-        reply.header("Content-Type", "application/gzip");
-        return packageResult.content;
-      } catch (error) {
-        request.log.error(error);
-        reply.code(400);
-        return { error: error instanceof Error ? error.message : String(error) };
+    try {
+      const snapshot = await buildSnapshotWithWebsocket(wsClient);
+      const blueprint = snapshot.blueprints.find((entry) => entry.id === draft.blueprintId);
+      if (!blueprint) {
+        throw new Error(`Blueprint ${draft.blueprintId} was not found`);
       }
-    });
+
+      const packageResult = await buildBlueprintExportPackage({
+        wsClient,
+        config,
+        draft,
+        blueprint
+      });
+
+      reply.header("Cache-Control", "no-store");
+      reply.header("Content-Disposition", `attachment; filename="${packageResult.fileName}"`);
+      reply.header("Content-Length", String(packageResult.content.length));
+      reply.header("Content-Type", "application/gzip");
+      return packageResult.content;
+    } catch (error) {
+      request.log.error(error);
+      reply.code(400);
+      return { error: error instanceof Error ? error.message : String(error) };
+    }
   });
 
-  app.get("/api/learning", async (request, reply) =>
-    withClient(request, reply, async (client) => {
-      try {
-        const store = await loadLearningStore(client);
-        const response: LearningLibraryResponse = {
-          activeSession: normalizeLearningSession(store.active_session),
-          events: (store.library ?? [])
-            .filter((entry): entry is Record<string, unknown> => isRecord(entry))
-            .map((entry) => normalizeLearnedEvent(entry))
-            .sort((left, right) => right.capturedAt.localeCompare(left.capturedAt))
-        };
-        return response;
-      } catch (error) {
-        request.log.error(error);
-        reply.code(400);
-        return { error: error instanceof Error ? error.message : String(error) };
-      }
-    })
-  );
+  app.get("/api/learning", async (request, reply) => {
+    if (preferredBackend(wsClient) === "none") {
+      reply.code(503);
+      return { error: "HA_TOKEN is not configured" };
+    }
+    if (!config.haConfigPath) {
+      reply.code(501);
+      return { error: "Learn mode requires HA_CONFIG_PATH" };
+    }
+
+    try {
+      const store = await loadLearningStore(config);
+      const response: LearningLibraryResponse = {
+        activeSession: normalizeLearningSession(store.active_session),
+        events: (store.library ?? [])
+          .filter((entry): entry is Record<string, unknown> => isRecord(entry))
+          .map((entry) => normalizeLearnedEvent(entry))
+          .sort((left, right) => right.capturedAt.localeCompare(left.capturedAt))
+      };
+      return response;
+    } catch (error) {
+      request.log.error(error);
+      reply.code(400);
+      return { error: error instanceof Error ? error.message : String(error) };
+    }
+  });
 
   app.post("/api/learning/start", async (request, reply) => {
+    if (preferredBackend(wsClient) === "none") {
+      reply.code(503);
+      return { error: "HA_TOKEN is not configured" };
+    }
+    if (!config.haConfigPath) {
+      reply.code(501);
+      return { error: "Learn mode requires HA_CONFIG_PATH" };
+    }
+
     const body = request.body as {
       blueprintId?: string;
       configId?: string;
@@ -2013,112 +2090,191 @@ async function main(): Promise<void> {
       label?: string;
     };
 
-    return withClient(request, reply, async (client) => {
-      try {
-        await client.callService("switch_manager", "start_learning", {
-          ...(body.blueprintId ? { blueprint_id: body.blueprintId } : {}),
-          ...(body.configId ? { config_id: body.configId } : {}),
-          ...(body.identifier ? { identifier: body.identifier } : {}),
-          ...(body.label ? { label: body.label } : {})
-        });
-        const store = await loadLearningStore(client);
-        return {
-          activeSession: normalizeLearningSession(store.active_session)
-        };
-      } catch (error) {
-        request.log.error(error);
-        reply.code(400);
-        return { error: error instanceof Error ? error.message : String(error) };
-      }
-    });
+    try {
+      await wsClient.callService("switch_manager", "start_learning", {
+        ...(body.blueprintId ? { blueprint_id: body.blueprintId } : {}),
+        ...(body.configId ? { config_id: body.configId } : {}),
+        ...(body.identifier ? { identifier: body.identifier } : {}),
+        ...(body.label ? { label: body.label } : {})
+      });
+      const store = await loadLearningStore(config);
+      return {
+        activeSession: normalizeLearningSession(store.active_session)
+      };
+    } catch (error) {
+      request.log.error(error);
+      reply.code(400);
+      return { error: error instanceof Error ? error.message : String(error) };
+    }
   });
 
-  app.post("/api/learning/stop", async (request, reply) =>
-    withClient(request, reply, async (client) => {
-      try {
-        await client.callService("switch_manager", "stop_learning");
-        return { ok: true };
-      } catch (error) {
-        request.log.error(error);
-        reply.code(400);
-        return { error: error instanceof Error ? error.message : String(error) };
-      }
-    })
-  );
+  app.post("/api/learning/stop", async (request, reply) => {
+    if (preferredBackend(wsClient) === "none") {
+      reply.code(503);
+      return { error: "HA_TOKEN is not configured" };
+    }
+    if (!config.haConfigPath) {
+      reply.code(501);
+      return { error: "Learn mode requires HA_CONFIG_PATH" };
+    }
 
-  app.post("/api/learning/clear", async (request, reply) =>
-    withClient(request, reply, async (client) => {
-      try {
-        await client.callService("switch_manager", "clear_learning_library");
-        return { ok: true };
-      } catch (error) {
-        request.log.error(error);
-        reply.code(400);
-        return { error: error instanceof Error ? error.message : String(error) };
-      }
-    })
-  );
+    try {
+      await wsClient.callService("switch_manager", "stop_learning");
+      return { ok: true };
+    } catch (error) {
+      request.log.error(error);
+      reply.code(400);
+      return { error: error instanceof Error ? error.message : String(error) };
+    }
+  });
+
+  app.post("/api/learning/clear", async (request, reply) => {
+    if (preferredBackend(wsClient) === "none") {
+      reply.code(503);
+      return { error: "HA_TOKEN is not configured" };
+    }
+    if (!config.haConfigPath) {
+      reply.code(501);
+      return { error: "Learn mode requires HA_CONFIG_PATH" };
+    }
+
+    try {
+      await wsClient.callService("switch_manager", "clear_learning_library");
+      return { ok: true };
+    } catch (error) {
+      request.log.error(error);
+      reply.code(400);
+      return { error: error instanceof Error ? error.message : String(error) };
+    }
+  });
 
   app.get("/api/devices/:id/properties", async (request, reply) => {
-    const params = request.params as { id: string };
-    return withClient(request, reply, async (client) => {
-      try {
-        const snapshot = await buildSnapshotWithWebsocket(client);
-        return await loadDevicePropertiesWithWebsocket(client, snapshot, params.id);
-      } catch (error) {
-        request.log.error(error);
-        reply.code(400);
-        return { error: error instanceof Error ? error.message : String(error) };
+    if (preferredBackend(wsClient) === "none") {
+      reply.code(503);
+      return { error: "HA_TOKEN is not configured" };
+    }
+
+    try {
+      const params = request.params as { id: string };
+      const snapshot = await buildSnapshotWithWebsocket(wsClient);
+      return await loadDeviceProperties(wsClient, snapshot, params.id);
+    } catch (error) {
+      request.log.error(error);
+      reply.code(400);
+      return { error: error instanceof Error ? error.message : String(error) };
+    }
+  });
+
+  app.get("/api/devices/:deviceId/image", async (request, reply) => {
+    if (preferredBackend(wsClient) === "none") {
+      reply.code(503);
+      return { error: "HA_TOKEN is not configured" };
+    }
+
+    const params = request.params as { deviceId: string };
+
+    try {
+      const allStates = await wsClient.call<Array<Record<string, unknown>>>({ type: "get_states" });
+      const entityRegistry = await wsClient.call<Array<Record<string, unknown>>>({
+        type: "config/entity_registry/list"
+      });
+
+      // Build a set of entity IDs belonging to this device.
+      const deviceEntityIds = new Set(
+        entityRegistry
+          .filter((entry): entry is Record<string, unknown> => isRecord(entry) && asString(entry.device_id) === params.deviceId)
+          .map((entry) => asString(entry.entity_id))
+          .filter(Boolean)
+      );
+
+      // Find the first entity that has entity_picture in its state attributes.
+      const entityPictureUrl = allStates
+        .filter((state): state is Record<string, unknown> => isRecord(state) && deviceEntityIds.has(asString(state.entity_id)))
+        .map((state) => isRecord(state.attributes) ? asNullableString(state.attributes.entity_picture) : null)
+        .find((url): url is string => Boolean(url));
+
+      if (!entityPictureUrl) {
+        reply.code(404);
+        return { error: "No device image available for this device" };
       }
-    });
+
+      const response = await wsClient.fetch(entityPictureUrl);
+      if (!response.ok) {
+        reply.code(404);
+        return { error: "Device image could not be fetched from Home Assistant" };
+      }
+
+      const contentType = response.headers.get("content-type") ?? "image/jpeg";
+      void reply.header("Content-Type", contentType);
+      return Buffer.from(await response.arrayBuffer());
+    } catch (error) {
+      request.log.error(error);
+      reply.code(500);
+      return { error: "Device image fetch failed" };
+    }
   });
 
   app.post("/api/entities/control", async (request, reply) => {
+    if (preferredBackend(wsClient) === "none") {
+      reply.code(503);
+      return { error: "HA_TOKEN is not configured" };
+    }
+
     const body = request.body as { entityId?: string; action?: string; value?: unknown };
     if (typeof body?.entityId !== "string" || typeof body?.action !== "string") {
       reply.code(400);
       return { error: "entityId and action are required" };
     }
-    const entityId = body.entityId;
-    const action = body.action;
 
-    return withClient(request, reply, async (client) => {
-      try {
-        await callEntityControl(client, entityId, action, body.value);
-        return { ok: true };
-      } catch (error) {
-        request.log.error(error);
-        reply.code(400);
-        return { error: error instanceof Error ? error.message : String(error) };
-      }
-    });
+    try {
+      await callEntityControl(wsClient, body.entityId, body.action, body.value);
+      return { ok: true };
+    } catch (error) {
+      request.log.error(error);
+      reply.code(400);
+      return { error: error instanceof Error ? error.message : String(error) };
+    }
   });
 
   app.post("/api/configs/save", async (request, reply) => {
+    if (preferredBackend(wsClient) === "none") {
+      reply.code(503);
+      return { error: "HA_TOKEN is not configured" };
+    }
+
     const body = request.body as SaveConfigRequest | undefined;
     if (!body || !isRecord(body.config)) {
       reply.code(400);
       return { error: "Invalid config payload" };
     }
 
-    return withClient(request, reply, async (client) => {
+    const draft = body.config as SwitchManagerConfig;
+
+    try {
+      const result = await wsClient.call<{ config: Record<string, unknown> }>({
+        type: "switch_manager/config/save",
+        config: normalizeConfigForSave(draft)
+      });
+      const savedConfig = normalizeConfig(isRecord(result.config) ? result.config : {});
       try {
-        const savedConfig = await saveConfigWithWebsocket(client, body.config as SwitchManagerConfig);
-        return {
-          ok: true,
-          config: savedConfig
-        };
-      } catch (error) {
-        request.log.error(error);
-        reply.code(400);
-        return {
-          error: error instanceof Error ? error.message : String(error)
-        };
+        await syncConfigArea(wsClient, savedConfig);
+      } catch (syncError) {
+        request.log.error(syncError, "Area sync failed after config save");
       }
-    });
+      return { ok: true, config: savedConfig };
+    } catch (error) {
+      request.log.error(error);
+      reply.code(400);
+      return { error: error instanceof Error ? error.message : String(error) };
+    }
   });
 
   app.put("/api/configs/:id/enabled", async (request, reply) => {
+    if (preferredBackend(wsClient) === "none") {
+      reply.code(503);
+      return { error: "HA_TOKEN is not configured" };
+    }
+
     const params = request.params as { id: string };
     const body = request.body as { enabled?: unknown };
     if (typeof body?.enabled !== "boolean") {
@@ -2126,68 +2282,71 @@ async function main(): Promise<void> {
       return { error: "enabled must be a boolean" };
     }
 
-    return withClient(request, reply, async (client) => {
-      try {
-        return await client.call({
-          type: "switch_manager/config/enabled",
-          config_id: params.id,
-          enabled: body.enabled
-        });
-      } catch (error) {
-        request.log.error(error);
-        reply.code(400);
-        return {
-          error: error instanceof Error ? error.message : String(error)
-        };
-      }
-    });
+    try {
+      return await wsClient.call({
+        type: "switch_manager/config/enabled",
+        config_id: params.id,
+        enabled: body.enabled
+      });
+    } catch (error) {
+      request.log.error(error);
+      reply.code(400);
+      return { error: error instanceof Error ? error.message : String(error) };
+    }
   });
 
   app.delete("/api/configs/:id", async (request, reply) => {
+    if (preferredBackend(wsClient) === "none") {
+      reply.code(503);
+      return { error: "HA_TOKEN is not configured" };
+    }
+
     const params = request.params as { id: string };
-    return withClient(request, reply, async (client) => {
-      try {
-        return await client.call({
-          type: "switch_manager/config/delete",
-          config_id: params.id
-        });
-      } catch (error) {
-        request.log.error(error);
-        reply.code(400);
-        return {
-          error: error instanceof Error ? error.message : String(error)
-        };
-      }
-    });
+
+    try {
+      return await wsClient.call({
+        type: "switch_manager/config/delete",
+        config_id: params.id
+      });
+    } catch (error) {
+      request.log.error(error);
+      reply.code(400);
+      return { error: error instanceof Error ? error.message : String(error) };
+    }
   });
 
   app.get("/api/blueprints/:id/image", async (request, reply) => {
     const params = request.params as { id: string };
-    const overrideImage = await serveLocalBlueprintImage(config.blueprintImageOverrideDir, params.id);
-    if (overrideImage) {
-      reply.header("Content-Type", "image/png");
-      reply.header("Cache-Control", "no-store");
-      return overrideImage;
-    }
 
-    const localImage = await serveLocalBlueprintImage(config.blueprintImageDir, params.id);
-    if (localImage) {
-      reply.header("Content-Type", "image/png");
-      reply.header("Cache-Control", "no-store");
-      return localImage;
-    }
-
-    return withClient(request, reply, async (client) => {
-      const response = await client.fetch(`/assets/switch_manager/${encodeURIComponent(params.id)}.png`);
-      if (response.ok) {
-        reply.header("Content-Type", response.headers.get("content-type") ?? "image/png");
+    try {
+      const overrideImage = await serveLocalBlueprintImage(config.blueprintImageOverrideDir, params.id);
+      if (overrideImage) {
+        reply.header("Content-Type", "image/png");
         reply.header("Cache-Control", "no-store");
-        return Buffer.from(await response.arrayBuffer());
+        return overrideImage;
       }
 
-      reply.code(404);
-      return { error: `Blueprint image not available for ${params.id}` };
-    });
+      const localImage = await serveLocalBlueprintImage(config.blueprintImageDir, params.id);
+      if (localImage) {
+        reply.header("Content-Type", "image/png");
+        reply.header("Cache-Control", "no-store");
+        return localImage;
+      }
+
+      if (wsClient.hasToken) {
+        const response = await wsClient.fetch(`/assets/switch_manager/${encodeURIComponent(params.id)}.png`);
+        if (response.ok) {
+          reply.header("Content-Type", response.headers.get("content-type") ?? "image/png");
+          reply.header("Cache-Control", "no-store");
+          return Buffer.from(await response.arrayBuffer());
+        }
+      }
+    } catch (error) {
+      request.log.error(error);
+    }
+
+    reply.code(404);
+    return { error: `Blueprint image not available for ${params.id}` };
   });
 
   if (await fileExists(webRoot)) {
@@ -2196,12 +2355,20 @@ async function main(): Promise<void> {
       prefix: "/"
     });
 
+    // When running behind HA ingress the supervisor sets INGRESS_ENTRY to the
+    // path prefix (e.g. /api/hassio_ingress/TOKEN/). Injecting it as <base href>
+    // makes all relative asset and API URLs resolve correctly under that prefix.
+    const ingressEntry = process.env.INGRESS_ENTRY?.trim() || "/";
+    const indexHtml = await readFile(resolve(webRoot, "index.html"), "utf8");
+    const indexHtmlWithBase = indexHtml.replace("<head>", `<head><base href="${ingressEntry}">`);
+
     app.setNotFoundHandler(async (request, reply) => {
       if (request.url.startsWith("/api/")) {
         reply.code(404);
         return { error: "Not found" };
       }
-      return reply.sendFile("index.html");
+      void reply.header("content-type", "text/html; charset=utf-8");
+      return indexHtmlWithBase;
     });
   }
 

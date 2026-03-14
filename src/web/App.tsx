@@ -25,6 +25,7 @@ import {
 import { AuthPanel } from "./components/AuthPanel";
 import { AutomationPanel } from "./components/AutomationPanel";
 import { BlueprintPanel } from "./components/BlueprintPanel";
+import { SensorPanel } from "./components/SensorPanel";
 import { ConfigRail } from "./components/ConfigRail";
 import { DiscoveryPanel } from "./components/DiscoveryPanel";
 import { LearnPanel } from "./components/LearnPanel";
@@ -72,13 +73,13 @@ const WORKSPACE_OPTIONS: Array<{
   {
     id: "virtual",
     label: "Virtual Press",
-    description: "Synthetic multi-press setup for the selected switch button.",
+    description: "Configure multi-press actions for the selected switch button.",
     requiresDraft: true
   },
   {
     id: "teach",
     label: "Teach",
-    description: "Capture switch presses and build the learn library.",
+    description: "Capture switch presses to identify buttons and events.",
     requiresDraft: true
   },
   {
@@ -86,6 +87,12 @@ const WORKSPACE_OPTIONS: Array<{
     label: "Automations",
     description: "Import and export Home Assistant automations for the active switch.",
     requiresDraft: true
+  },
+  {
+    id: "discovery",
+    label: "Discovery",
+    description: "Scan for unmapped devices and create new switch configs.",
+    requiresDraft: false
   }
 ];
 
@@ -383,6 +390,7 @@ export function App() {
   }
 
   function selectConfig(config: SwitchManagerConfig): void {
+    const blueprint = blueprintsById.get(config.blueprintId);
     setSelectedConfigId(config.id);
     setDraft(cloneConfig(config));
     setSelectedButtonIndex(0);
@@ -392,6 +400,10 @@ export function App() {
     setAutomationTarget("native");
     setProperties(null);
     setNotice(null);
+    // Sensor configs don't support Virtual Press; bounce back to editor if needed.
+    if (blueprint?.blueprintType === "sensor") {
+      setActiveWorkspace((current) => (current === "virtual" ? "editor" : current));
+    }
   }
 
   function handleWorkspaceChange(workspace: WorkspaceMode): void {
@@ -639,10 +651,15 @@ export function App() {
           virtual: false
         });
       }
-      setAutomations(await fetchAutomations());
       setNotice({ kind: "success", text: "Exported the current slot to Home Assistant automations." });
     } catch (error) {
       showActionError(error);
+      return;
+    }
+    try {
+      setAutomations(await fetchAutomations());
+    } catch {
+      // Automations refresh after export is non-fatal; cached list stays.
     }
   }
 
@@ -716,8 +733,8 @@ export function App() {
   }) ?? [];
   const importTargetLabel =
     automationTarget === "virtual"
-      ? `Button ${selectedButtonIndex + 1} synthetic press ${selectedVirtualPressCount}x`
-      : `Button ${selectedButtonIndex + 1} action ${selectedActionIndex + 1}`;
+      ? `Button ${selectedButtonIndex + 1} — ${selectedVirtualPressCount}x press`
+      : `Button ${selectedButtonIndex + 1} — action ${selectedActionIndex + 1}`;
   const activeWorkspaceOption = WORKSPACE_DETAILS[activeWorkspace];
 
   if (authChecking && authStatus === null) {
@@ -746,6 +763,30 @@ export function App() {
   ) {
     if (!draft || !selectedBlueprint) {
       return null;
+    }
+
+    if (selectedBlueprint.blueprintType === "sensor") {
+      return (
+        <SensorPanel
+          areas={snapshot?.areas ?? []}
+          draft={draft}
+          onAreaChange={(areaId) =>
+            updateDraft((nextDraft) => {
+              const metadata = ensureSwitchMetadata(nextDraft);
+              metadata.areaManaged = true;
+              metadata.areaId = areaId;
+            })
+          }
+          onDelete={() => void handleDelete()}
+          onEnabledToggle={(enabled) => void handleEnabledToggle(enabled)}
+          onIdentifierChange={(value) => updateDraft((nextDraft) => void (nextDraft.identifier = value))}
+          onNameChange={(value) => updateDraft((nextDraft) => void (nextDraft.name = value))}
+          onSelectTrigger={onSelectButton}
+          selectedAreaId={selectedAreaId}
+          selectedBlueprint={selectedBlueprint}
+          selectedButtonIndex={selectedButtonIndex}
+        />
+      );
     }
 
     return (
@@ -889,7 +930,9 @@ export function App() {
           </div>
 
           <div className="workspace-switcher__grid">
-            {WORKSPACE_OPTIONS.map((option) => {
+            {WORKSPACE_OPTIONS.filter(
+              (option) => !(option.id === "virtual" && selectedBlueprint?.blueprintType === "sensor")
+            ).map((option) => {
               const disabled = option.requiresDraft && (!draft || !selectedBlueprint);
               return (
                 <button

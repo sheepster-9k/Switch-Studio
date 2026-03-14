@@ -71,6 +71,37 @@ export class HomeAssistantClient {
     });
   }
 
+  async callService(
+    domain: string,
+    service: string,
+    serviceData?: Record<string, unknown>,
+    target?: Record<string, unknown>
+  ): Promise<void> {
+    await this.call({
+      type: "call_service",
+      domain,
+      service,
+      ...(serviceData ? { service_data: serviceData } : {}),
+      ...(target ? { target } : {})
+    });
+  }
+
+  async updateDeviceArea(deviceId: string, areaId: string | null): Promise<void> {
+    await this.call({
+      type: "config/device_registry/update",
+      device_id: deviceId,
+      area_id: areaId
+    });
+  }
+
+  async updateEntityArea(entityId: string, areaId: string | null): Promise<void> {
+    await this.call({
+      type: "config/entity_registry/update",
+      entity_id: entityId,
+      area_id: areaId
+    });
+  }
+
   async fetch(path: string, init: RequestInit = {}): Promise<Response> {
     const headers = new Headers(init.headers);
     headers.set("Authorization", `Bearer ${this.config.haToken}`);

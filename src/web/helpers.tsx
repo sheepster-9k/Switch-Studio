@@ -631,6 +631,7 @@ export function createDraftFromDiscovery(
 ): SwitchManagerConfig {
   return createDraftFromBlueprint(blueprint, {
     name: candidate.name,
+    identifier: candidate.suggestedIdentifier,
     deviceId: candidate.deviceId,
     primaryEntityId: candidate.entityIds.find((entityId) => entityId.startsWith("event.")) ?? candidate.entityIds[0] ?? null,
     propertyEntityIds: candidate.entityIds,

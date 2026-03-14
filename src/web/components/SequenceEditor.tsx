@@ -364,12 +364,17 @@ export function SequenceEditor(props: SequenceEditorProps) {
   const selectedButton = draft.buttons[selectedButtonIndex] ?? null;
   const selectedAction = selectedButton?.actions[selectedActionIndex] ?? null;
 
+  const isSensor = selectedBlueprint.blueprintType === "sensor";
+  const triggerLabel = isSensor
+    ? (selectedBlueprint.buttons[selectedButtonIndex]?.actions[0]?.title ?? `Trigger ${selectedButtonIndex + 1}`)
+    : `Button ${selectedButtonIndex + 1}`;
+
   return (
     <section className="panel panel--editor">
       <div className="panel-head">
         <div>
-          <p className="eyebrow">Mapping</p>
-          <h3>Button {selectedButtonIndex + 1}</h3>
+          <p className="eyebrow">{isSensor ? "Trigger" : "Mapping"}</p>
+          <h3>{triggerLabel}</h3>
         </div>
         <span className="pill">{selectedButton?.actions.length ?? 0} action slots</span>
       </div>
@@ -421,7 +426,7 @@ export function SequenceEditor(props: SequenceEditorProps) {
           />
         </>
       ) : (
-        <div className="empty-state">This button has no action slots.</div>
+        <div className="empty-state">{isSensor ? "This trigger has no action slots." : "This button has no action slots."}</div>
       )}
     </section>
   );
@@ -1644,7 +1649,7 @@ function ConditionEditor(props: { condition: SequenceStep; onChange: (condition:
             <span>Entity IDs</span>
             <input
               onChange={(event) => onChange(setListishField(condition, "entity_id", event.target.value))}
-              placeholder="person.chris"
+              placeholder="person.someone"
               type="text"
               value={listishToText(condition.entity_id)}
             />
@@ -2043,13 +2048,18 @@ function YamlFieldEditor<T>(props: {
   value: unknown;
 }) {
   const { buttonLabel, label, onApply, rows = 8, validate, value } = props;
-  const [text, setText] = useState(formatYaml(value));
+  const [committedYaml, setCommittedYaml] = useState(() => formatYaml(value));
+  const [text, setText] = useState(committedYaml);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    setText(formatYaml(value));
-    setError(null);
-  }, [value]);
+    const formatted = formatYaml(value);
+    if (formatted !== committedYaml) {
+      setCommittedYaml(formatted);
+      setText(formatted);
+      setError(null);
+    }
+  }, [value, committedYaml]);
 
   return (
     <label className="field">
@@ -2200,7 +2210,7 @@ function createConditionTemplate(type: ConditionType): SequenceStep {
     case "not":
       return { condition: "not", conditions: [createConditionTemplate("state")] };
     case "zone":
-      return { condition: "zone", entity_id: "person.chris", zone: "zone.home", event: "enter" };
+      return { condition: "zone", entity_id: "person.someone", zone: "zone.home", event: "enter" };
     case "sun":
       return { condition: "sun", after: "sunset" };
     case "raw":

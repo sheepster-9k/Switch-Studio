@@ -25,6 +25,7 @@ function discoverySearchText(candidate: DiscoveryCandidate, blueprintsById: Map<
     candidate.manufacturer ?? "",
     candidate.model ?? "",
     candidate.probableProtocol ?? "",
+    candidate.suggestedIdentifier,
     blueprintNames,
     candidate.relatedAutomationIds.join(" ")
   ]
@@ -301,6 +302,18 @@ export function DiscoveryPanel(props: DiscoveryPanelProps) {
                   </span>
                 ) : null}
               </div>
+
+              {selectedCandidate.suggestedIdentifier ? (
+                <p className="stack-card__meta">
+                  Identifier: <code>{selectedCandidate.suggestedIdentifier}</code>
+                </p>
+              ) : null}
+
+              {selectedCandidate.relatedAutomationIds.length > 0 ? (
+                <p className="stack-card__meta">
+                  Related automations: {selectedCandidate.relatedAutomationIds.join(", ")}
+                </p>
+              ) : null}
             </div>
           ) : null}
 
@@ -326,7 +339,7 @@ export function DiscoveryPanel(props: DiscoveryPanelProps) {
               >
                 <div className="discovery-blueprint-card__preview">
                   {blueprint.hasImage ? (
-                    <img alt={`${blueprint.name} blueprint`} loading="lazy" src={`/api/blueprints/${encodeURIComponent(blueprint.id)}/image`} />
+                    <img alt={`${blueprint.name} blueprint`} loading="lazy" src={`api/blueprints/${encodeURIComponent(blueprint.id)}/image`} />
                   ) : (
                     <div className="discovery-blueprint-card__placeholder">
                       <span>No image</span>

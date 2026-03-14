@@ -12,6 +12,9 @@ EnvironmentFile=-/etc/default/switch-manager-studio
 Environment=NODE_ENV=production
 Environment=HOST=0.0.0.0
 Environment=PORT=8878
+# HA_TOKEN and HA_BASE_URL must be set in /etc/default/switch-manager-studio
+# Set HA_CONFIG_PATH to enable automations, learn mode, and raw blueprint YAML
+# Example: HA_CONFIG_PATH=/config
 ExecStart=/usr/local/bin/node /opt/switch-manager-studio/dist/server/index.js
 Restart=always
 RestartSec=5

@@ -1,30 +1,55 @@
 # Switch Manager Studio
 
-Standalone interactive entity UI for the `switch_manager` Home Assistant custom component.
+Standalone interactive editor for the `switch_manager` Home Assistant custom component.
 
 ## Goals
 - Keep Home Assistant auth server-side.
-- Run as a separate Node service alongside Home Assistant or on another reachable host.
+- Run as a Home Assistant addon (recommended) or as a separate Node service.
 - Provide a switch-focused editor for button mappings, entity/device/area targets, and raw sequence steps.
 - Use direct Home Assistant websocket and REST access only.
 
 ## Architecture
-- Browser -> `Switch Manager Studio` web app
-- Studio backend -> Home Assistant websocket API and REST API
-- Home Assistant -> existing `custom_components/switch_manager`
+- Browser → Switch Manager Studio web app
+- Studio backend → Home Assistant WebSocket API
+- Home Assistant → existing `custom_components/switch_manager`
 
-## Environment
+---
 
-Create `/etc/default/switch-manager-studio` on the target host:
+## Installation: HA Addon (recommended)
+
+1. The `addons/local/switch_manager_studio/` directory in your HA config is the local addon. HA Supervisor scans this automatically.
+2. In HA, go to **Settings → Add-ons → Add-on Store** (three-dot menu) → **Check for updates** to detect the local addon.
+3. Install "Switch Manager Studio" from the **Local add-ons** section.
+4. In the addon **Configuration** tab, paste a long-lived HA token into `ha_token`.
+5. Start the addon. The **Switch Manager Studio** sidebar entry appears automatically via HA ingress.
+
+The addon mounts your HA config at `/homeassistant` automatically, which enables automations import/export, learn mode, and raw blueprint YAML access.
+
+---
+
+## Installation: Standalone (external service)
+
+Build and run alongside Home Assistant on any reachable host.
+
+### Environment
+
+Create `/etc/default/switch-manager-studio`:
 
 ```bash
 HA_BASE_URL=http://homeassistant.local:8123
+HA_TOKEN=your-long-lived-token
 PORT=8878
 ```
 
-`HA_BASE_URL` is optional. When present, the auth panel uses it as the default Home Assistant URL. The access token is entered at runtime in the studio UI and is stored server-side in the studio data directory for the session lifetime. It is not written into the repo or the frontend bundle.
+To enable automations, learn mode, and raw blueprint YAML, also set:
 
-Optional paths:
+```bash
+HA_CONFIG_PATH=/path/to/homeassistant/config
+```
+
+When running on the same machine as Home Assistant, `HA_CONFIG_PATH` is typically `/config` (HA OS) or `/home/homeassistant/.homeassistant`.
+
+### Optional path overrides
 
 ```bash
 SWITCH_MANAGER_BLUEPRINT_IMAGE_DIR=/opt/switch-manager-studio/data/blueprints
@@ -32,9 +57,21 @@ SWITCH_MANAGER_BLUEPRINT_OVERRIDE_IMAGE_DIR=/opt/switch-manager-studio/data/blue
 SWITCH_MANAGER_AUTH_SESSION_STORE=/opt/switch-manager-studio/data/auth-sessions.json
 ```
 
-`SWITCH_MANAGER_BLUEPRINT_IMAGE_DIR` should contain the switch-manager blueprint `.png` files. The backend serves those locally while the blueprint YAML data comes from Home Assistant through the `switch_manager` websocket commands.
+`SWITCH_MANAGER_BLUEPRINT_IMAGE_DIR` should contain switch-manager blueprint `.png` files. The backend serves them locally; blueprint YAML data comes from Home Assistant via the WebSocket API.
 
-`SWITCH_MANAGER_BLUEPRINT_OVERRIDE_IMAGE_DIR` stores studio-managed image overrides created from the editor. The UI accepts PNG, JPG, WEBP, GIF, and SVG uploads, converts them to PNG, constrains them to the Switch Manager recommendation of 800px width or 500px height, and uses the result both in the editor canvas and exported blueprint packages.
+`SWITCH_MANAGER_BLUEPRINT_OVERRIDE_IMAGE_DIR` stores studio-managed image overrides. The UI accepts PNG, JPG, WEBP, GIF, and SVG uploads, converts them to PNG, constrains them to the Switch Manager recommendation of 800px width or 500px height, and uses the result both in the editor canvas and exported blueprint packages.
+
+### Feature availability
+
+| Feature | Requires |
+|---------|----------|
+| Switch editor, blueprints, config save/delete | `HA_TOKEN` |
+| Device discovery | `HA_TOKEN` |
+| Automation import/export | `HA_TOKEN` + `HA_CONFIG_PATH` |
+| Learn mode | `HA_TOKEN` + `HA_CONFIG_PATH` |
+| Raw blueprint YAML (for export packages) | `HA_CONFIG_PATH` |
+
+---
 
 `SWITCH_MANAGER_AUTH_SESSION_STORE` is the runtime-only session file used to persist authenticated studio sessions across page reloads and service restarts.
 
@@ -56,6 +93,17 @@ npm start
 ```
 
 The example systemd unit is in [deploy/switch-manager-studio.service](./deploy/switch-manager-studio.service).
+
+## Docker
+
+```bash
+docker build -t switch-manager-studio .
+docker run -p 8878:8878 \
+  -e HA_BASE_URL=http://homeassistant.local:8123 \
+  -e HA_TOKEN=your-token \
+  -v /path/to/ha/config:/homeassistant \
+  switch-manager-studio
+```
 
 ## Security
 

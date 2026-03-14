@@ -4,7 +4,9 @@ export interface StudioConfig {
   authSessionStorePath: string;
   host: string;
   port: number;
-  defaultHaBaseUrl: string | null;
+  haBaseUrl: string;
+  haToken: string | null;
+  haConfigPath: string | null;
   requestTimeoutMs: number;
   blueprintImageDir: string;
   blueprintImageOverrideDir: string;
@@ -29,13 +31,22 @@ function resolveDataPath(value: string): string {
 }
 
 export function loadConfig(): StudioConfig {
-  const defaultHaBaseUrl = firstEnvValue("HA_BASE_URL", "HASS_URL", "HOME_ASSISTANT_URL");
+  const haBaseUrl = cleanBaseUrl(
+    firstEnvValue("HA_BASE_URL", "HASS_URL", "HOME_ASSISTANT_URL") ?? "http://127.0.0.1:8123"
+  );
+
+  const rawConfigPath = firstEnvValue("HA_CONFIG_PATH");
+  const haConfigPath = rawConfigPath
+    ? rawConfigPath.trim().replace(/\\/g, "/").replace(/\/+$/, "")
+    : null;
 
   return {
     authSessionStorePath: resolveDataPath(process.env.SWITCH_MANAGER_AUTH_SESSION_STORE ?? "data/auth-sessions.json"),
     host: process.env.HOST ?? "0.0.0.0",
     port: Number(process.env.PORT ?? "8878"),
-    defaultHaBaseUrl: defaultHaBaseUrl ? cleanBaseUrl(defaultHaBaseUrl) : null,
+    haBaseUrl,
+    haToken: process.env.HA_TOKEN?.trim() || null,
+    haConfigPath,
     requestTimeoutMs: Number(process.env.HA_REQUEST_TIMEOUT_MS ?? "10000"),
     blueprintImageDir: resolveDataPath(process.env.SWITCH_MANAGER_BLUEPRINT_IMAGE_DIR ?? "data/blueprints"),
     blueprintImageOverrideDir: resolveDataPath(

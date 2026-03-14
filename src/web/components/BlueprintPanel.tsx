@@ -3,8 +3,10 @@ import { useEffect, useRef, useState } from "react";
 import {
   deleteBlueprintImageOverride,
   fetchBlueprintImageStatus,
+  fetchDeviceImage,
   uploadBlueprintImageOverride
 } from "../api";
+import { blueprintImageUrl, convertToPng, loadImageElement } from "../imageUtils";
 import type {
   AreaSummary,
   BlueprintImageStatus,
@@ -65,8 +67,6 @@ interface BlueprintViewport {
 }
 
 const blueprintImageSizeCache = new Map<string, BlueprintImageSize>();
-const MAX_BLUEPRINT_IMAGE_WIDTH = 800;
-const MAX_BLUEPRINT_IMAGE_HEIGHT = 500;
 
 function editableSeed(
   blueprint: SwitchManagerBlueprint,
@@ -105,21 +105,6 @@ function svgPoint(svg: SVGSVGElement, clientX: number, clientY: number): { x: nu
   };
 }
 
-async function loadImageElement(src: string): Promise<HTMLImageElement> {
-  const image = new Image();
-  image.crossOrigin = "anonymous";
-  image.src = src;
-  await new Promise<void>((resolve, reject) => {
-    image.onload = () => resolve();
-    image.onerror = () => reject(new Error("Blueprint image could not be loaded"));
-  });
-  return image;
-}
-
-function blueprintImageUrl(blueprintId: string, revision = 0): string {
-  return `/api/blueprints/${encodeURIComponent(blueprintId)}/image?v=${revision}`;
-}
-
 async function loadBlueprintImage(blueprintId: string, revision = 0): Promise<HTMLImageElement> {
   return loadImageElement(blueprintImageUrl(blueprintId, revision));
 }
@@ -139,67 +124,6 @@ async function loadBlueprintImageSize(blueprintId: string, revision = 0): Promis
   return size;
 }
 
-async function readBlobAsDataUrl(blob: Blob): Promise<string> {
-  return new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result === "string") {
-        resolve(reader.result);
-        return;
-      }
-      reject(new Error("Image could not be read"));
-    };
-    reader.onerror = () => reject(reader.error ?? new Error("Image could not be read"));
-    reader.readAsDataURL(blob);
-  });
-}
-
-function fitImageInside(width: number, height: number): { height: number; width: number } {
-  if (width <= 0 || height <= 0) {
-    throw new Error("Image dimensions are invalid");
-  }
-
-  const scale = Math.min(1, MAX_BLUEPRINT_IMAGE_WIDTH / width, MAX_BLUEPRINT_IMAGE_HEIGHT / height);
-  return {
-    width: Math.max(1, Math.round(width * scale)),
-    height: Math.max(1, Math.round(height * scale))
-  };
-}
-
-async function convertUploadedImageToPng(file: File): Promise<Blob> {
-  const supportedMimeTypes = new Set([
-    "image/png",
-    "image/jpeg",
-    "image/webp",
-    "image/gif",
-    "image/svg+xml"
-  ]);
-  if (file.type && !supportedMimeTypes.has(file.type)) {
-    throw new Error("Use PNG, JPG, WEBP, GIF, or SVG images.");
-  }
-
-  const image = await loadImageElement(await readBlobAsDataUrl(file));
-  const naturalWidth = image.naturalWidth || image.width;
-  const naturalHeight = image.naturalHeight || image.height;
-  const size = fitImageInside(naturalWidth, naturalHeight);
-  const canvas = document.createElement("canvas");
-  canvas.width = size.width;
-  canvas.height = size.height;
-  const context = canvas.getContext("2d");
-  if (!context) {
-    throw new Error("Canvas context is unavailable");
-  }
-  context.clearRect(0, 0, canvas.width, canvas.height);
-  context.drawImage(image, 0, 0, canvas.width, canvas.height);
-
-  const blob = await new Promise<Blob | null>((resolve) => {
-    canvas.toBlob((nextBlob) => resolve(nextBlob), "image/png");
-  });
-  if (!blob) {
-    throw new Error("Image conversion failed");
-  }
-  return blob;
-}
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
@@ -542,7 +466,7 @@ export function BlueprintPanel(props: BlueprintPanelProps) {
         next.height <= seed.height * 3;
 
       if (!valid) {
-        throw new Error("No confident button outline was found near the current button bounds");
+        throw new Error("No clear button outline found near the current bounds. Try adjusting the position manually.");
       }
 
       applyOverride(selectedButtonIndex, next);
@@ -565,7 +489,7 @@ export function BlueprintPanel(props: BlueprintPanelProps) {
 
     try {
       setImageBusy(true);
-      const pngBlob = await convertUploadedImageToPng(file);
+      const pngBlob = await convertToPng(file);
       const status = await uploadBlueprintImageOverride(selectedBlueprint.id, pngBlob, file.name);
       setImageStatus(status);
       setImageRevision((current) => current + 1);
@@ -604,6 +528,26 @@ export function BlueprintPanel(props: BlueprintPanelProps) {
         kind: "error",
         text: error instanceof Error ? error.message : "Blueprint image reset failed."
       });
+    } finally {
+      setImageBusy(false);
+    }
+  }
+
+  async function handleFetchDeviceImage(): Promise<void> {
+    if (!draft.deviceId) {
+      return;
+    }
+    try {
+      setImageBusy(true);
+      const blob = await fetchDeviceImage(draft.deviceId);
+      const pngBlob = await convertToPng(blob);
+      const status = await uploadBlueprintImageOverride(selectedBlueprint.id, pngBlob, "device-image.jpg");
+      setImageStatus(status);
+      setImageRevision((current) => current + 1);
+      setLayoutEditingEnabled(true);
+      onNotify(`Fetched device image${status.width && status.height ? ` (${status.width}x${status.height})` : ""}.`);
+    } catch (error) {
+      onNotify(error instanceof Error ? error.message : "Device image fetch failed.");
     } finally {
       setImageBusy(false);
     }
@@ -709,6 +653,16 @@ export function BlueprintPanel(props: BlueprintPanelProps) {
             <span className={`pill ${imageStatus?.hasOverride ? "" : "pill--muted"}`}>
               {imageStatus?.hasOverride ? "Custom image" : imageAvailable ? "Image available" : "No image"}
             </span>
+            {draft.deviceId ? (
+              <button
+                className="button button--ghost"
+                disabled={imageBusy}
+                onClick={() => void handleFetchDeviceImage()}
+                type="button"
+              >
+                Fetch from device
+              </button>
+            ) : null}
             <button
               className="button button--ghost"
               disabled={imageBusy}
@@ -870,7 +824,7 @@ export function BlueprintPanel(props: BlueprintPanelProps) {
         </div>
         {!imageAvailable ? (
           <p className="panel-copy">
-            Import PNG, JPG, WEBP, GIF, or SVG artwork for this blueprint. The studio converts uploads to PNG, keeps them within 800px wide or 500px high, and uses the result for editing and export.
+            Import a PNG, JPG, WEBP, GIF, or SVG image for this blueprint. Uploads are converted to PNG and scaled to fit within 800×500 px.
           </p>
         ) : null}
       </div>
@@ -1082,8 +1036,8 @@ export function BlueprintPanel(props: BlueprintPanelProps) {
 
         <p className="panel-copy">
           {layoutEditingEnabled
-            ? "Layout editing is on. Drag the selected button or use the controls below to adjust its bounds."
-            : "Layout editing is off. Select buttons safely, then enable edit mode when you want to move or resize them."}
+            ? "Edit mode on. Drag buttons in the canvas or adjust bounds with the fields below."
+            : "Edit mode off. Enable it to drag or resize buttons."}
         </p>
       </div>
     </section>
