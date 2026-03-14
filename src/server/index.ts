@@ -30,6 +30,7 @@ import type {
   SwitchManagerConfig
 } from "../shared/types.js";
 import { loadConfig, type StudioConfig } from "./config.js";
+import { StudioAuthManager } from "./auth.js";
 import { HomeAssistantClient } from "./haClient.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -237,7 +238,7 @@ function normalizeConfigForSave(config: SwitchManagerConfig): Record<string, unk
 }
 
 function normalizeConfigFromStore(id: string, raw: Record<string, unknown>): SwitchManagerConfig {
-  return normalizeConfig({ id, ...raw });
+  return normalizeConfig({ ...raw, id });
 }
 
 function uniqueStrings(values: Array<string | null | undefined>): string[] {
@@ -1043,7 +1044,7 @@ function buildSnapshotFromRawData(input: {
       return {
         entityId: entity.entityId,
         name:
-          asString(state?.friendly_name) ||
+          (isRecord(state?.attributes) ? asString(state.attributes.friendly_name) : "") ||
           entity.name ||
           entity.originalName ||
           entity.entityId,
@@ -1794,12 +1795,44 @@ async function serveLocalBlueprintImage(
 
 async function main(): Promise<void> {
   const config = loadConfig();
-  const wsClient = new HomeAssistantClient(config);
+  const authManager = new StudioAuthManager(config);
+  let wsClient = new HomeAssistantClient(config);
   const app = Fastify({ logger: true });
   const webRoot = resolve(__dirname, "../web");
 
   app.get("/api/auth/status", async (request, reply) => {
     reply.header("Cache-Control", "no-store");
+    return {
+      authenticated: wsClient.hasToken,
+      haBaseUrl: wsClient.hasToken ? wsClient.baseUrl : null,
+      defaultHaBaseUrl: config.haBaseUrl
+    };
+  });
+
+  app.post("/api/auth/session", async (request, reply) => {
+    reply.header("Cache-Control", "no-store");
+    const body = request.body as { accessToken?: unknown; haBaseUrl?: unknown } | undefined;
+    const accessToken = typeof body?.accessToken === "string" ? body.accessToken.trim() : "";
+    const haBaseUrl = typeof body?.haBaseUrl === "string" ? body.haBaseUrl.trim() : "";
+    if (!accessToken || !haBaseUrl) {
+      reply.code(400);
+      return { error: "accessToken and haBaseUrl are required" };
+    }
+    const session = authManager.createSession(reply, { accessToken, haBaseUrl });
+    wsClient.close();
+    wsClient = new HomeAssistantClient({ ...config, haToken: session.accessToken, haBaseUrl: session.haBaseUrl });
+    return {
+      authenticated: true,
+      haBaseUrl: session.haBaseUrl,
+      defaultHaBaseUrl: config.haBaseUrl
+    };
+  });
+
+  app.delete("/api/auth/session", async (request, reply) => {
+    reply.header("Cache-Control", "no-store");
+    authManager.clearSession(request, reply);
+    wsClient.close();
+    wsClient = new HomeAssistantClient(config);
     return {
       authenticated: wsClient.hasToken,
       haBaseUrl: wsClient.hasToken ? wsClient.baseUrl : null,
@@ -2251,11 +2284,12 @@ async function main(): Promise<void> {
     const draft = body.config as SwitchManagerConfig;
 
     try {
-      const result = await wsClient.call<{ config: Record<string, unknown> }>({
+      const result = await wsClient.call<{ config_id: string; config: Record<string, unknown> }>({
         type: "switch_manager/config/save",
         config: normalizeConfigForSave(draft)
       });
-      const savedConfig = normalizeConfig(isRecord(result.config) ? result.config : {});
+      const savedId = asString(result.config_id) || draft.id;
+      const savedConfig = normalizeConfigFromStore(savedId, isRecord(result.config) ? result.config : {});
       try {
         await syncConfigArea(wsClient, savedConfig);
       } catch (syncError) {

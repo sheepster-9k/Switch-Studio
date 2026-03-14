@@ -1,5 +1,7 @@
 import WebSocket from "ws";
 
+import type { StudioConfig } from "./config.js";
+
 interface PendingRequest<T> {
   reject: (error: Error) => void;
   resolve: (value: T) => void;
@@ -27,21 +29,19 @@ function toWsUrl(baseUrl: string): string {
   return `${baseUrl}/api/websocket`;
 }
 
-export interface HomeAssistantConnectionConfig {
-  haBaseUrl: string;
-  haToken: string;
-  requestTimeoutMs: number;
-}
-
 export class HomeAssistantClient {
-  private readonly config: HomeAssistantConnectionConfig;
+  private readonly config: StudioConfig;
   private connectPromise: Promise<void> | null = null;
   private messageId = 1;
   private pending = new Map<number, PendingRequest<unknown>>();
   private socket: WebSocket | null = null;
 
-  constructor(config: HomeAssistantConnectionConfig) {
+  constructor(config: StudioConfig) {
     this.config = config;
+  }
+
+  get hasToken(): boolean {
+    return Boolean(this.config.haToken);
   }
 
   get baseUrl(): string {
@@ -49,6 +49,10 @@ export class HomeAssistantClient {
   }
 
   async call<T>(message: Record<string, unknown>): Promise<T> {
+    if (!this.config.haToken) {
+      throw new Error("HA_TOKEN is not configured");
+    }
+
     await this.connect();
     const socket = this.socket;
     if (!socket || socket.readyState !== WebSocket.OPEN) {
@@ -102,38 +106,6 @@ export class HomeAssistantClient {
     });
   }
 
-  async fetch(path: string, init: RequestInit = {}): Promise<Response> {
-    const headers = new Headers(init.headers);
-    headers.set("Authorization", `Bearer ${this.config.haToken}`);
-    return fetch(`${this.config.haBaseUrl}${path}`, { ...init, headers });
-  }
-
-  async callService(
-    domain: string,
-    service: string,
-    serviceData?: Record<string, unknown>,
-    target?: Record<string, unknown>
-  ): Promise<unknown> {
-    const response = await this.fetch(`/api/services/${encodeURIComponent(domain)}/${encodeURIComponent(service)}`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        ...(target ?? {}),
-        ...(serviceData ?? {})
-      })
-    });
-
-    if (!response.ok) {
-      const body = await response.text();
-      throw new Error(body || `Home Assistant service ${domain}.${service} failed with ${response.status}`);
-    }
-
-    const body = await response.text();
-    return body ? (JSON.parse(body) as unknown) : null;
-  }
-
   close(): void {
     const socket = this.socket;
     this.socket = null;
@@ -148,12 +120,24 @@ export class HomeAssistantClient {
     }
   }
 
+  async fetch(path: string, init: RequestInit = {}): Promise<Response> {
+    const headers = new Headers(init.headers);
+    if (this.config.haToken) {
+      headers.set("Authorization", `Bearer ${this.config.haToken}`);
+    }
+    return fetch(`${this.config.haBaseUrl}${path}`, { ...init, headers });
+  }
+
   private async connect(): Promise<void> {
     if (this.socket?.readyState === WebSocket.OPEN) {
       return;
     }
     if (this.connectPromise) {
       return this.connectPromise;
+    }
+
+    if (!this.config.haToken) {
+      throw new Error("HA_TOKEN is not configured");
     }
 
     this.connectPromise = new Promise<void>((resolve, reject) => {
@@ -190,7 +174,7 @@ export class HomeAssistantClient {
             return;
           }
           if (message.type === "auth_invalid") {
-            const error = new Error("Home Assistant rejected the access token");
+            const error = new Error("Home Assistant rejected HA_TOKEN");
             reject(error);
             socket.close();
             return;

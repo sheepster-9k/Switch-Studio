@@ -230,8 +230,15 @@ export function App() {
     if (!learning?.activeSession?.active) {
       return;
     }
+    let polling = false;
     const timer = window.setInterval(() => {
-      void refreshLearning();
+      if (polling) {
+        return;
+      }
+      polling = true;
+      void refreshLearning().finally(() => {
+        polling = false;
+      });
     }, 3000);
     return () => window.clearInterval(timer);
   }, [learning?.activeSession?.active]);
@@ -535,6 +542,9 @@ export function App() {
           : "The switch state changed, but the studio refresh failed."
       });
     } catch (error) {
+      updateDraft((nextDraft) => {
+        nextDraft.enabled = !nextEnabled;
+      });
       showActionError(error);
     }
   }
@@ -690,11 +700,22 @@ export function App() {
       });
       return;
     }
+    // Pre-validate target exists using current draft — the updateDraft updater runs lazily
+    // so mutations inside it are not visible synchronously after the call returns.
+    const canImport =
+      automationTarget === "virtual"
+        ? Boolean(draft.buttons[selectedButtonIndex])
+        : Boolean(draft.buttons[selectedButtonIndex]?.actions[selectedActionIndex]);
+    if (!canImport) {
+      return;
+    }
     updateDraft((nextDraft) => {
       if (automationTarget === "virtual") {
-        let virtual = nextDraft.buttons[selectedButtonIndex]?.virtualActions.find(
-          (entry) => entry.pressCount === selectedVirtualPressCount
-        );
+        const button = nextDraft.buttons[selectedButtonIndex];
+        if (!button) {
+          return;
+        }
+        let virtual = button.virtualActions.find((entry) => entry.pressCount === selectedVirtualPressCount);
         if (!virtual) {
           virtual = {
             title: `press ${selectedVirtualPressCount}x`,
@@ -702,7 +723,8 @@ export function App() {
             mode: automation.mode ?? "single",
             sequence: []
           };
-          nextDraft.buttons[selectedButtonIndex]?.virtualActions.push(virtual);
+          button.virtualActions.push(virtual);
+          button.virtualActions.sort((left, right) => left.pressCount - right.pressCount);
         }
         virtual.mode = automation.mode ?? virtual.mode;
         virtual.sequence = automation.actions.map((step) => cloneStep(step));

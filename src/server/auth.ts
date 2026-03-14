@@ -149,7 +149,7 @@ export class StudioAuthManager {
     return {
       authenticated: Boolean(session),
       haBaseUrl: session?.haBaseUrl ?? null,
-      defaultHaBaseUrl: config.defaultHaBaseUrl
+      defaultHaBaseUrl: config.haBaseUrl
     };
   }
 
