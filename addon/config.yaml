@@ -11,8 +11,10 @@ arch:
   - armv7
 startup: application
 boot: auto
+hassio_api: true
 map:
   - config:rw
+  - share:ro
 ports:
   8878/tcp: 8878
 ports_description:
@@ -21,7 +23,7 @@ options:
   ha_token: ""
   port: 8878
 schema:
-  ha_token: str
+  ha_token: str?
   port: int
 panel_icon: mdi:light-switch
 panel_title: Switch Manager Studio

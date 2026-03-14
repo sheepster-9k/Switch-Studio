@@ -82,6 +82,7 @@ jobs:
     needs: build
     if: always() && !cancelled() && github.event_name != 'pull_request'
     permissions:
+      contents: read
       packages: write
 
     steps:
@@ -124,7 +125,11 @@ jobs:
             exit 1
           fi
 
+          TAGS="--tag ${IMAGE}:${TAG}"
+          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            TAGS="${TAGS} --tag ${IMAGE}:latest"
+          fi
+
           docker buildx imagetools create \
-            --tag "${IMAGE}:${TAG}" \
-            --tag "${IMAGE}:latest" \
+            ${TAGS} \
             ${SOURCES}
