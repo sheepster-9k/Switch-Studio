@@ -688,7 +688,7 @@ export class MqttStudioBridge {
           current.updatedAt = now;
           this.runtime.set(name, current);
           this.scheduleRuntimeCacheWrite();
-          this.scheduleTargetExpiry(name, telemetryAt);
+          this.scheduleTargetExpiry(name, now);
           this.emitDevice(name);
         }
       }
