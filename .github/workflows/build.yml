@@ -21,6 +21,7 @@ jobs:
       contents: read
       packages: write
     strategy:
+      fail-fast: false
       matrix:
         include:
           - arch: amd64
@@ -79,7 +80,7 @@ jobs:
     name: Push multi-arch manifest
     runs-on: ubuntu-latest
     needs: build
-    if: github.event_name != 'pull_request'
+    if: always() && !cancelled() && github.event_name != 'pull_request'
     permissions:
       packages: write
 
@@ -108,10 +109,22 @@ jobs:
           TAG="${{ steps.version.outputs.tag }}"
           IMAGE="${{ env.IMAGE }}"
 
+          SOURCES=""
+          for ARCH in amd64 aarch64 armv7 armhf; do
+            if docker buildx imagetools inspect "${IMAGE}:${TAG}-${ARCH}" > /dev/null 2>&1; then
+              SOURCES="${SOURCES} ${IMAGE}:${TAG}-${ARCH}"
+              echo "Found ${ARCH}"
+            else
+              echo "Skipping ${ARCH} (image not found)"
+            fi
+          done
+
+          if [ -z "$SOURCES" ]; then
+            echo "::error::No architecture images found"
+            exit 1
+          fi
+
           docker buildx imagetools create \
             --tag "${IMAGE}:${TAG}" \
             --tag "${IMAGE}:latest" \
-            "${IMAGE}:${TAG}-amd64" \
-            "${IMAGE}:${TAG}-aarch64" \
-            "${IMAGE}:${TAG}-armv7" \
-            "${IMAGE}:${TAG}-armhf"
+            ${SOURCES}
