@@ -923,7 +923,11 @@ export class MqttStudioBridge {
       if (socket.readyState !== undefined && socket.readyState !== 1) {
         continue;
       }
-      socket.send(message);
+      try {
+        socket.send(message);
+      } catch {
+        // Socket closed between readyState check and send; skip it.
+      }
     }
   }
 

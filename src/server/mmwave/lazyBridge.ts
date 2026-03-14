@@ -13,6 +13,7 @@ const IDLE_SHUTDOWN_MS = 30_000;
 export class LazyMmwaveBridge {
   private bridge: MqttStudioBridge | null = null;
   private idleTimer: ReturnType<typeof setTimeout> | null = null;
+  private activating: Promise<MqttStudioBridge> | null = null;
 
   readonly profileStore: FileProfileStore;
   readonly areaLabelStore: AreaLabelStore;
@@ -34,6 +35,18 @@ export class LazyMmwaveBridge {
     if (this.bridge) {
       return this.bridge;
     }
+    if (this.activating) {
+      return this.activating;
+    }
+    this.activating = this.doActivate();
+    try {
+      return await this.activating;
+    } finally {
+      this.activating = null;
+    }
+  }
+
+  private async doActivate(): Promise<MqttStudioBridge> {
     if (!this.areaLabelStoreLoaded) {
       await this.areaLabelStore.load();
       this.areaLabelStoreLoaded = true;
@@ -45,6 +58,9 @@ export class LazyMmwaveBridge {
 
   async deactivate(): Promise<void> {
     this.clearIdleTimer();
+    if (this.activating) {
+      await this.activating;
+    }
     if (!this.bridge) {
       return;
     }

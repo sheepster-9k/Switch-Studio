@@ -640,6 +640,7 @@ function MmwaveWorkspace() {
       return;
     }
     setEditorRect(copyRect(cornerDraftRect));
+    setEditorDirty(true);
     setError(null);
   }
 

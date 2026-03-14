@@ -147,10 +147,10 @@ function sanitizeSettingsRequest(body: unknown): UpdateSettingsRequest | null {
   if (typeof input.roomPreset === "string" && input.roomPreset.trim()) {
     patch.roomPreset = input.roomPreset;
   }
-  if (typeof input.detectSensitivity === "string" && input.detectSensitivity.trim()) {
+  if (typeof input.detectSensitivity === "string" && DETECT_SENSITIVITY_OPTIONS.has(input.detectSensitivity)) {
     patch.detectSensitivity = input.detectSensitivity;
   }
-  if (typeof input.detectTrigger === "string" && input.detectTrigger.trim()) {
+  if (typeof input.detectTrigger === "string" && DETECT_TRIGGER_OPTIONS.has(input.detectTrigger)) {
     patch.detectTrigger = input.detectTrigger;
   }
   if (isFiniteNumber(input.holdTime)) {
@@ -159,10 +159,10 @@ function sanitizeSettingsRequest(body: unknown): UpdateSettingsRequest | null {
   if (isFiniteNumber(input.stayLife)) {
     patch.stayLife = input.stayLife;
   }
-  if (typeof input.targetInfoReport === "string" && input.targetInfoReport.trim()) {
+  if (typeof input.targetInfoReport === "string" && TARGET_INFO_REPORT_OPTIONS.has(input.targetInfoReport)) {
     patch.targetInfoReport = input.targetInfoReport;
   }
-  if (typeof input.controlWiredDevice === "string" && input.controlWiredDevice.trim()) {
+  if (typeof input.controlWiredDevice === "string" && CONTROL_WIRED_DEVICE_OPTIONS.has(input.controlWiredDevice)) {
     patch.controlWiredDevice = input.controlWiredDevice;
   }
   if (isFiniteNumber(input.defaultLevelLocal)) {
@@ -409,6 +409,10 @@ export async function registerMmwaveRoutes(app: FastifyInstance, lazy: LazyMmwav
       try {
         const bridge = await lazy.activate();
         bridge.attachSocket(ws);
+        ws.on("error", () => {
+          bridge.detachSocket(ws);
+          lazy.scheduleIdleShutdown();
+        });
         ws.on("close", () => {
           bridge.detachSocket(ws);
           lazy.scheduleIdleShutdown();
