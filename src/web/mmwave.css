@@ -1,0 +1,966 @@
+.mmwave-workspace {
+  --md-sys-color-primary: #91a7ff;
+  --md-sys-color-on-primary: #101934;
+  --md-sys-color-primary-container: #1b2744;
+  --md-sys-color-on-primary-container: #dce4ff;
+  --md-sys-color-secondary: #bcc6d9;
+  --md-sys-color-on-secondary: #212b39;
+  --md-sys-color-secondary-container: #273143;
+  --md-sys-color-on-secondary-container: #e0e7f3;
+  --md-sys-color-tertiary: #ef8db8;
+  --md-sys-color-on-tertiary: #3f1324;
+  --md-sys-color-tertiary-container: #51243a;
+  --md-sys-color-on-tertiary-container: #ffd9e8;
+  --md-sys-color-error: #ffb4ab;
+  --md-sys-color-on-error: #690005;
+  --md-sys-color-error-container: #93000a;
+  --md-sys-color-on-error-container: #ffdad6;
+  --md-sys-color-surface: #0b1018;
+  --md-sys-color-surface-dim: #090d14;
+  --md-sys-color-surface-bright: #2c3541;
+  --md-sys-color-surface-container-lowest: #090e15;
+  --md-sys-color-surface-container-low: #0f1520;
+  --md-sys-color-surface-container: #131a25;
+  --md-sys-color-surface-container-high: #181f2b;
+  --md-sys-color-surface-container-highest: #1f2734;
+  --md-sys-color-surface-variant: #2b3442;
+  --md-sys-color-on-surface: #eef2f9;
+  --md-sys-color-on-surface-variant: #afbbca;
+  --md-sys-color-outline: #687485;
+  --md-sys-color-outline-variant: rgba(104, 116, 133, 0.28);
+  --md-sys-color-scrim: rgba(0, 0, 0, 0.44);
+  --bg-panel: color-mix(in srgb, var(--md-sys-color-surface-container) 88%, transparent);
+  --bg-panel-strong: color-mix(in srgb, var(--md-sys-color-surface-container-high) 92%, transparent);
+  --text: var(--md-sys-color-on-surface);
+  --muted: var(--md-sys-color-on-surface-variant);
+  --grid: rgba(145, 167, 255, 0.045);
+  --line: var(--md-sys-color-outline-variant);
+  --line-strong: rgba(145, 167, 255, 0.32);
+  --accent-teal: #8fd5ff;
+  --accent-amber: #ef8db8;
+  --accent-rose: #ff9db5;
+  --accent-blue: #93a8ff;
+  --danger: var(--md-sys-color-error);
+  --shadow-sm: 0 8px 18px rgba(0, 0, 0, 0.16);
+  --shadow-md: 0 14px 28px rgba(0, 0, 0, 0.2);
+  --shadow-lg: 0 22px 44px rgba(0, 0, 0, 0.26);
+  --glow-teal: rgba(143, 213, 255, 0.18);
+  --glow-blue: rgba(147, 168, 255, 0.16);
+  --state-hover: rgba(237, 242, 250, 0.06);
+  --state-press: rgba(237, 242, 250, 0.1);
+  --radius-xs: 10px;
+  --radius-sm: 14px;
+  --radius-md: 18px;
+  --radius-lg: 22px;
+  --radius-xl: 26px;
+  color: var(--text);
+  font-family: "Roboto Flex", Roboto, "Segoe UI Variable", Aptos, sans-serif;
+}
+
+.mmwave-workspace *,
+.mmwave-workspace *::before,
+.mmwave-workspace *::after {
+  box-sizing: border-box;
+}
+
+.mmwave-workspace button,
+.mmwave-workspace input,
+.mmwave-workspace select,
+.mmwave-workspace textarea {
+  font: inherit;
+}
+
+.mmwave-workspace button {
+  cursor: pointer;
+  transition:
+    transform 180ms cubic-bezier(0.2, 0, 0, 1),
+    border-color 180ms cubic-bezier(0.2, 0, 0, 1),
+    background 180ms cubic-bezier(0.2, 0, 0, 1),
+    box-shadow 180ms cubic-bezier(0.2, 0, 0, 1),
+    opacity 180ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.mmwave-workspace button:hover:not(:disabled),
+.mmwave-workspace button:focus-visible:not(:disabled) {
+  transform: none;
+  border-color: var(--line-strong);
+  box-shadow: 0 0 0 1px rgba(145, 167, 255, 0.12);
+}
+
+.mmwave-workspace button:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.mmwave-workspace input:focus,
+.mmwave-workspace select:focus,
+.mmwave-workspace textarea:focus {
+  outline: none;
+  border-color: var(--line-strong);
+  box-shadow: 0 0 0 3px rgba(126, 167, 255, 0.12);
+}
+
+.mmwave-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 18px;
+}
+
+.mmwave-workspace .eyebrow {
+  margin: 0 0 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+
+.mmwave-workspace .status-cluster,
+.mmwave-workspace .inline-actions,
+.mmwave-workspace .button-row,
+.mmwave-workspace .button-stack,
+.mmwave-workspace .legend,
+.mmwave-workspace .segmented {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.mmwave-workspace .status-cluster {
+  justify-content: flex-end;
+}
+
+.mmwave-workspace .bridge-pill,
+.mmwave-workspace .ghost-pill,
+.mmwave-workspace .legend-chip {
+  border-radius: 12px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+}
+
+.mmwave-workspace .bridge-pill.online {
+  background: color-mix(in srgb, var(--md-sys-color-primary-container) 82%, transparent);
+  color: var(--md-sys-color-on-primary-container);
+}
+
+.mmwave-workspace .bridge-pill.offline {
+  background: color-mix(in srgb, var(--md-sys-color-error-container) 74%, transparent);
+  color: var(--md-sys-color-on-error-container);
+}
+
+.mmwave-workspace .ghost-pill {
+  background: color-mix(in srgb, var(--md-sys-color-secondary-container) 76%, transparent);
+  color: var(--md-sys-color-on-secondary-container);
+}
+
+.mmwave-workspace .legend-chip.detection {
+  background: color-mix(in srgb, var(--md-sys-color-primary-container) 78%, transparent);
+  color: var(--md-sys-color-on-primary-container);
+}
+
+.mmwave-workspace .legend-chip.interference {
+  background: color-mix(in srgb, var(--md-sys-color-tertiary-container) 72%, transparent);
+  color: var(--md-sys-color-on-tertiary-container);
+}
+
+.mmwave-workspace .legend-chip.stay {
+  background: color-mix(in srgb, var(--md-sys-color-secondary-container) 74%, transparent);
+  color: var(--md-sys-color-on-secondary-container);
+}
+
+.mmwave-workspace .workspace {
+  display: grid;
+  grid-template-columns: minmax(292px, 332px) minmax(0, 1fr) minmax(312px, 356px);
+  gap: 18px;
+  align-items: start;
+}
+
+.mmwave-workspace .panel {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.02), rgba(255, 255, 255, 0.006)),
+    var(--bg-panel);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 20px;
+  padding: 18px;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.03),
+    0 10px 24px rgba(0, 0, 0, 0.16);
+}
+
+.mmwave-workspace .panel-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.mmwave-workspace .heading-row,
+.mmwave-workspace .eyebrow-row,
+.mmwave-workspace .field-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.mmwave-workspace .heading-row {
+  flex-wrap: wrap;
+}
+
+.mmwave-workspace .inline-heading {
+  align-items: center;
+}
+
+.mmwave-workspace .panel-copy {
+  margin: 12px 0 0;
+  color: var(--muted);
+  line-height: 1.62;
+}
+
+.mmwave-workspace .compact-copy {
+  margin-top: 8px;
+}
+
+.mmwave-workspace .toolbar-copy {
+  grid-column: 1 / -1;
+  margin-top: 0;
+}
+
+.mmwave-workspace .help-tip {
+  position: relative;
+  display: inline-flex;
+}
+
+.mmwave-workspace .help-tip summary {
+  list-style: none;
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: rgba(126, 167, 255, 0.1);
+  color: var(--muted);
+  font-size: 0.74rem;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  user-select: none;
+}
+
+.mmwave-workspace .help-tip summary::-webkit-details-marker {
+  display: none;
+}
+
+.mmwave-workspace .help-popover {
+  position: absolute;
+  top: calc(100% + 10px);
+  left: 0;
+  z-index: 6;
+  width: min(320px, calc(100vw - 56px));
+  padding: 12px 14px;
+  border-radius: 18px;
+  border: 1px solid var(--line-strong);
+  background: rgba(8, 14, 21, 0.96);
+  box-shadow: var(--shadow-lg);
+  color: var(--muted);
+  backdrop-filter: blur(24px);
+}
+
+.mmwave-workspace .help-popover strong {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--text);
+  font-size: 0.94rem;
+}
+
+.mmwave-workspace .help-popover-body {
+  display: grid;
+  gap: 8px;
+  line-height: 1.55;
+}
+
+.mmwave-workspace .help-popover-body p {
+  margin: 0;
+}
+
+.mmwave-workspace .device-list,
+.mmwave-workspace .canvas-column,
+.mmwave-workspace .control-column,
+.mmwave-workspace .side-column {
+  display: grid;
+  gap: 18px;
+}
+
+.mmwave-workspace .device-rail {
+  position: sticky;
+  top: 24px;
+}
+
+.mmwave-workspace .side-column {
+  position: sticky;
+  top: 20px;
+  max-height: calc(100vh - 40px);
+  overflow: auto;
+  padding-right: 4px;
+  align-content: start;
+}
+
+.mmwave-workspace .workspace > .side-column .device-rail {
+  position: static;
+  top: auto;
+}
+
+.mmwave-workspace .rail-count {
+  align-self: start;
+}
+
+.mmwave-workspace .left-column .diagnostics-panel .runtime-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.mmwave-workspace .left-column .runtime-grid div {
+  min-height: 74px;
+}
+
+.mmwave-workspace .device-chip {
+  width: 100%;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  position: relative;
+  overflow: hidden;
+  min-height: 108px;
+  padding: 14px 15px 15px;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.018), transparent 42%),
+    color-mix(in srgb, var(--md-sys-color-surface-container-high) 90%, transparent);
+  color: inherit;
+  text-align: left;
+}
+
+.mmwave-workspace .device-chip::before {
+  content: "";
+  position: absolute;
+  inset: 10px auto 10px 10px;
+  width: 3px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(145, 167, 255, 0.82), rgba(145, 167, 255, 0.08));
+  opacity: 0.42;
+}
+
+.mmwave-workspace .device-chip:hover,
+.mmwave-workspace .device-chip.selected {
+  transform: none;
+  border-color: rgba(145, 167, 255, 0.24);
+  background:
+    linear-gradient(180deg, rgba(145, 167, 255, 0.12), rgba(145, 167, 255, 0.02)),
+    color-mix(in srgb, var(--md-sys-color-primary-container) 54%, var(--md-sys-color-surface-container-high));
+}
+
+.mmwave-workspace .device-chip.selected::before {
+  opacity: 1;
+  box-shadow: 0 0 14px rgba(145, 167, 255, 0.24);
+}
+
+.mmwave-workspace .device-chip-copy {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.mmwave-workspace .device-chip-copy span {
+  color: var(--muted);
+}
+
+.mmwave-workspace .device-chip-kicker {
+  font-size: 0.72rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--muted) 84%, var(--accent-blue));
+}
+
+.mmwave-workspace .device-chip-copy strong {
+  font-size: 1.08rem;
+  letter-spacing: -0.02em;
+}
+
+.mmwave-workspace .device-chip-statusline {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.mmwave-workspace .device-chip-state {
+  font-weight: 600;
+  color: color-mix(in srgb, var(--text) 74%, var(--muted));
+}
+
+.mmwave-workspace .device-chip-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 6px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.05);
+  font-size: 0.76rem;
+}
+
+.mmwave-workspace .device-chip-badge.target {
+  color: var(--md-sys-color-on-primary-container);
+  background: rgba(130, 215, 200, 0.14);
+  border-color: rgba(130, 215, 200, 0.24);
+}
+
+.mmwave-workspace .device-chip-badge.fallback {
+  color: var(--md-sys-color-on-secondary-container);
+  background: rgba(183, 200, 249, 0.12);
+  border-color: rgba(183, 200, 249, 0.24);
+}
+
+.mmwave-workspace .device-chip-meta {
+  font-size: 0.79rem;
+  line-height: 1.5;
+  max-width: 30ch;
+}
+
+.mmwave-workspace .profile-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 16px;
+  max-height: 240px;
+  overflow: auto;
+}
+
+.mmwave-workspace .profile-chip {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  text-align: left;
+  padding: 15px 16px;
+  border-radius: 22px;
+  border: 1px solid transparent;
+  background: color-mix(in srgb, var(--md-sys-color-surface-container-high) 88%, transparent);
+  color: inherit;
+}
+
+.mmwave-workspace .profile-chip span {
+  color: var(--muted);
+  font-size: 0.84rem;
+}
+
+.mmwave-workspace .profile-chip:hover,
+.mmwave-workspace .profile-chip.selected {
+  border-color: rgba(183, 200, 249, 0.42);
+  background:
+    linear-gradient(180deg, rgba(183, 200, 249, 0.14), rgba(183, 200, 249, 0.04)),
+    color-mix(in srgb, var(--md-sys-color-secondary-container) 78%, var(--md-sys-color-surface-container-high));
+}
+
+.mmwave-workspace .hidden-file-input {
+  display: none;
+}
+
+.mmwave-workspace .status-dot {
+  width: 13px;
+  height: 13px;
+  border-radius: 999px;
+  background: var(--md-sys-color-outline);
+  box-shadow: 0 0 0 6px rgba(255, 255, 255, 0.024);
+}
+
+.mmwave-workspace .status-dot.online {
+  background: var(--accent-teal);
+}
+
+.mmwave-workspace .status-dot.offline {
+  background: var(--danger);
+}
+
+.mmwave-workspace .toolbar {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  align-items: end;
+}
+
+.mmwave-workspace .toolbar-group {
+  display: grid;
+  gap: 8px;
+}
+
+.mmwave-workspace .segmented button,
+.mmwave-workspace .ghost-button,
+.mmwave-workspace .action-button {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  min-height: 44px;
+  padding: 10px 16px;
+  background: color-mix(in srgb, var(--md-sys-color-surface-container-high) 88%, transparent);
+  color: inherit;
+  font-weight: 600;
+}
+
+.mmwave-workspace .segmented button {
+  max-width: 168px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mmwave-workspace .segmented button.selected,
+.mmwave-workspace .action-button {
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--md-sys-color-primary-container) 96%, transparent),
+    rgba(130, 215, 200, 0.16)
+  );
+  border-color: rgba(130, 215, 200, 0.5);
+  color: var(--md-sys-color-on-primary-container);
+}
+
+.mmwave-workspace .ghost-button {
+  background: color-mix(in srgb, var(--md-sys-color-surface-container-high) 92%, transparent);
+  color: var(--md-sys-color-on-surface);
+}
+
+.mmwave-workspace .toolbar-summary,
+.mmwave-workspace .teach-status-row,
+.mmwave-workspace .zone-meta-strip {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.mmwave-workspace .toolbar-summary {
+  grid-column: 1 / -1;
+  margin-top: 2px;
+}
+
+.mmwave-workspace .toolbar-stat,
+.mmwave-workspace .status-pill,
+.mmwave-workspace .zone-meta-chip {
+  padding: 10px 13px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--md-sys-color-surface-container-highest) 82%, transparent);
+  color: var(--muted);
+}
+
+.mmwave-workspace .teach-status-row,
+.mmwave-workspace .zone-meta-strip {
+  margin-top: 14px;
+}
+
+.mmwave-workspace .status-pill.active {
+  color: var(--md-sys-color-on-primary-container);
+  border-color: rgba(130, 215, 200, 0.45);
+  background: rgba(130, 215, 200, 0.18);
+}
+
+.mmwave-workspace .action-button.stop {
+  background: linear-gradient(135deg, rgba(255, 159, 145, 0.2), rgba(255, 183, 125, 0.18));
+  border-color: rgba(255, 159, 145, 0.42);
+}
+
+.mmwave-workspace .button-row,
+.mmwave-workspace .button-stack {
+  margin-top: 16px;
+}
+
+.mmwave-workspace .button-stack {
+  flex-direction: column;
+}
+
+.mmwave-workspace .field-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.mmwave-workspace .field {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.mmwave-workspace .field span {
+  font-size: 0.88rem;
+  color: var(--muted);
+}
+
+.mmwave-workspace .field-label {
+  justify-content: space-between;
+}
+
+.mmwave-workspace .field input,
+.mmwave-workspace .field select,
+.mmwave-workspace .field textarea {
+  width: 100%;
+  min-width: 0;
+  border-radius: 18px;
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--md-sys-color-surface-container-highest) 82%, transparent);
+  color: inherit;
+  padding: 14px 16px;
+}
+
+.mmwave-workspace .field-textarea {
+  min-height: 92px;
+  resize: vertical;
+}
+
+.mmwave-workspace .field-span-2 {
+  grid-column: 1 / -1;
+}
+
+.mmwave-workspace .zone-canvas {
+  width: 100%;
+  display: block;
+  filter: drop-shadow(0 24px 36px rgba(0, 0, 0, 0.16));
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.mmwave-workspace .zone-panel {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.02), rgba(255, 255, 255, 0.008)),
+    radial-gradient(circle at 12% 0%, rgba(145, 167, 255, 0.06), transparent 26%),
+    color-mix(in srgb, var(--md-sys-color-surface-container) 94%, transparent);
+}
+
+.mmwave-workspace .zone-stage {
+  position: relative;
+  margin-top: 16px;
+  padding: 12px;
+  border-radius: 18px;
+  border: 1px solid rgba(145, 167, 255, 0.12);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.014), rgba(255, 255, 255, 0.008)),
+    color-mix(in srgb, var(--md-sys-color-surface-container-low) 96%, transparent);
+}
+
+.mmwave-workspace .canvas-bg {
+  fill: color-mix(in srgb, var(--md-sys-color-surface-container-lowest) 95%, transparent);
+  stroke: rgba(255, 255, 255, 0.08);
+}
+
+.mmwave-workspace .canvas-grid {
+  opacity: 0.42;
+}
+
+.mmwave-workspace .grid-line {
+  stroke: var(--grid);
+  fill: none;
+  stroke-width: 1;
+}
+
+.mmwave-workspace .axis-line {
+  stroke: rgba(255, 255, 255, 0.18);
+  stroke-dasharray: 8 10;
+  stroke-width: 1.4;
+}
+
+.mmwave-workspace .zone {
+  stroke: rgba(255, 255, 255, 0.16);
+  stroke-width: 2;
+}
+
+.mmwave-workspace .zone-heat {
+  fill: rgba(255, 255, 255, 0.22);
+}
+
+.mmwave-workspace .zone-group.active .zone {
+  stroke: rgba(255, 255, 255, 0.75);
+  filter: drop-shadow(0 0 18px rgba(75, 207, 190, 0.45));
+}
+
+.mmwave-workspace .zone-label {
+  fill: rgba(255, 255, 255, 0.92);
+  font-size: 0.86rem;
+  font-weight: 600;
+}
+
+.mmwave-workspace .editor-rect {
+  fill: rgba(237, 242, 250, 0.08);
+  stroke: rgba(237, 242, 250, 0.94);
+  stroke-width: 2.2;
+  stroke-dasharray: 12 8;
+}
+
+.mmwave-workspace .editor-handle {
+  fill: white;
+  stroke: rgba(0, 0, 0, 0.4);
+  stroke-width: 2;
+}
+
+.mmwave-workspace .target-dot {
+  fill: var(--accent-blue);
+  filter: drop-shadow(0 0 12px rgba(126, 167, 255, 0.8));
+}
+
+.mmwave-workspace .target-dot-halo {
+  fill: rgba(126, 167, 255, 0.14);
+  stroke: rgba(126, 167, 255, 0.5);
+  stroke-width: 1.5;
+}
+
+.mmwave-workspace .target-trail {
+  fill: none;
+  stroke: rgba(126, 167, 255, 0.56);
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.mmwave-workspace .target-trail-anchor {
+  fill: rgba(126, 167, 255, 0.82);
+  stroke: rgba(7, 10, 16, 0.78);
+  stroke-width: 1.4;
+}
+
+.mmwave-workspace .target-label {
+  fill: rgba(225, 233, 245, 0.92);
+  font-size: 0.74rem;
+  font-weight: 700;
+}
+
+.mmwave-workspace .corner-capture-point {
+  fill: var(--accent-amber);
+  stroke: rgba(0, 0, 0, 0.55);
+  stroke-width: 2;
+  filter: drop-shadow(0 0 10px rgba(255, 177, 75, 0.65));
+}
+
+.mmwave-workspace .corner-draft-rect {
+  fill: rgba(126, 167, 255, 0.12);
+  stroke: var(--accent-blue);
+  stroke-width: 2.2;
+  stroke-dasharray: 10 8;
+}
+
+.mmwave-workspace .sensor-origin {
+  fill: rgba(255, 177, 75, 0.78);
+  filter: drop-shadow(0 0 14px rgba(255, 177, 75, 0.34));
+}
+
+.mmwave-workspace .zone-footer,
+.mmwave-workspace .teach-summary,
+.mmwave-workspace .runtime-grid,
+.mmwave-workspace .mini-occupancy-row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.mmwave-workspace .zone-footer {
+  margin-top: 12px;
+  color: var(--muted);
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+
+.mmwave-workspace .teach-heat-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.mmwave-workspace .corner-teach-block {
+  margin-top: 18px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+
+.mmwave-workspace .corner-fit-preview {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 14px;
+}
+
+.mmwave-workspace .corner-fit-preview span {
+  padding: 10px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: rgba(126, 167, 255, 0.08);
+  color: var(--text);
+}
+
+.mmwave-workspace .teach-heat-card {
+  display: grid;
+  gap: 6px;
+  padding: 14px;
+  border-radius: 16px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.016), transparent),
+    color-mix(in srgb, var(--md-sys-color-surface-container-high) 86%, transparent);
+}
+
+.mmwave-workspace .teach-heat-card small {
+  color: var(--muted);
+}
+
+.mmwave-workspace .heat-bar {
+  height: 8px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.mmwave-workspace .heat-bar span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--accent-blue), var(--accent-amber));
+}
+
+.mmwave-workspace .runtime-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.mmwave-workspace .runtime-grid div,
+.mmwave-workspace .teach-summary {
+  padding: 12px 14px;
+  border-radius: 22px;
+  background: color-mix(in srgb, var(--md-sys-color-surface-container-high) 86%, transparent);
+}
+
+.mmwave-workspace .runtime-grid span {
+  display: block;
+  color: var(--muted);
+  font-size: 0.84rem;
+}
+
+.mmwave-workspace .runtime-grid strong {
+  display: block;
+  margin-top: 4px;
+}
+
+.mmwave-workspace .mini-occupancy-row {
+  margin-top: 14px;
+}
+
+.mmwave-workspace .mini-occupancy-row span {
+  border-radius: 999px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  color: var(--muted);
+  background: color-mix(in srgb, var(--md-sys-color-surface-container-high) 82%, transparent);
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mmwave-workspace .mini-occupancy-row span.lit {
+  color: var(--md-sys-color-on-primary-container);
+  background: rgba(130, 215, 200, 0.18);
+  border-color: rgba(130, 215, 200, 0.42);
+}
+
+.mmwave-workspace .note-list {
+  margin: 16px 0 0;
+  padding-left: 18px;
+  color: var(--muted);
+}
+
+.mmwave-workspace .note-list li + li {
+  margin-top: 8px;
+}
+
+.mmwave-workspace .runtime-tracking-copy {
+  margin: 14px 0 0;
+  color: var(--muted);
+}
+
+.mmwave-workspace .live-tracking-callout {
+  display: grid;
+  gap: 12px;
+  margin-top: 16px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  border: 1px solid rgba(126, 167, 255, 0.18);
+  background: rgba(126, 167, 255, 0.08);
+}
+
+.mmwave-workspace .live-tracking-callout p {
+  margin: 0;
+  color: var(--text);
+}
+
+.mmwave-workspace .error-banner {
+  margin-top: 16px;
+  padding: 12px 14px;
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--md-sys-color-error-container) 72%, transparent);
+  color: var(--md-sys-color-on-error-container);
+}
+
+.mmwave-workspace .loading-state {
+  display: grid;
+  place-items: center;
+  font-size: 1.05rem;
+}
+
+.mmwave-workspace .empty-panel {
+  max-width: 720px;
+}
+
+.mmwave-workspace .side-column,
+.mmwave-workspace .profile-list {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(130, 215, 200, 0.28) transparent;
+}
+
+.mmwave-workspace h2,
+.mmwave-workspace h3 {
+  margin: 0;
+  font-weight: 680;
+  letter-spacing: -0.025em;
+}
+
+@media (max-width: 1360px) {
+  .mmwave-workspace .workspace {
+    grid-template-columns: 1fr;
+  }
+
+  .mmwave-workspace .device-rail,
+  .mmwave-workspace .side-column {
+    position: static;
+    max-height: none;
+    overflow: visible;
+  }
+}
+
+@media (max-width: 720px) {
+  .mmwave-workspace .toolbar {
+    grid-template-columns: 1fr;
+  }
+
+  .mmwave-workspace .toolbar-group .segmented {
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    padding-bottom: 4px;
+  }
+
+  .mmwave-workspace .field-grid,
+  .mmwave-workspace .teach-heat-grid,
+  .mmwave-workspace .runtime-grid {
+    grid-template-columns: 1fr;
+  }
+}

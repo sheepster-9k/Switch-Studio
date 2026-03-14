@@ -1,4 +1,4 @@
-import { startTransition, useDeferredValue, useEffect, useState } from "react";
+import { lazy, startTransition, Suspense, useDeferredValue, useEffect, useState } from "react";
 
 import {
   AUTH_EXPIRED_EVENT,
@@ -54,8 +54,10 @@ import type {
   SwitchManagerConfig
 } from "../shared/types";
 
+const LazyMmwaveWorkspace = lazy(() => import("./components/mmwave/MmwaveWorkspace"));
+
 type AutomationTarget = "native" | "virtual";
-type WorkspaceMode = "editor" | "virtual" | "teach" | "automations" | "discovery";
+type WorkspaceMode = "editor" | "virtual" | "teach" | "automations" | "discovery" | "mmwave";
 type NoticeState = { kind: "error" | "success"; text: string };
 
 const WORKSPACE_OPTIONS: Array<{
@@ -93,6 +95,12 @@ const WORKSPACE_OPTIONS: Array<{
     label: "Discovery",
     description: "Scan for unmapped devices and create new switch configs.",
     requiresDraft: false
+  },
+  {
+    id: "mmwave",
+    label: "mmWave",
+    description: "Program motion zones for Inovelli VZM32-SN mmWave switches.",
+    requiresDraft: false
   }
 ];
 
@@ -108,6 +116,10 @@ const WORKSPACE_DETAILS: Record<WorkspaceMode, { description: string; label: str
   editor: {
     description: "Core switch config, rooms, layout, and native actions.",
     label: "Editor"
+  },
+  mmwave: {
+    description: "Program motion zones for Inovelli VZM32-SN mmWave switches.",
+    label: "mmWave Studio"
   },
   teach: {
     description: "Capture switch presses and build the learn library.",
@@ -953,7 +965,9 @@ export function App() {
 
           <div className="workspace-switcher__grid">
             {WORKSPACE_OPTIONS.filter(
-              (option) => !(option.id === "virtual" && selectedBlueprint?.blueprintType === "sensor")
+              (option) =>
+                !(option.id === "virtual" && selectedBlueprint?.blueprintType === "sensor") &&
+                !(option.id === "mmwave" && !health?.mmwaveConfigured)
             ).map((option) => {
               const disabled = option.requiresDraft && (!draft || !selectedBlueprint);
               return (
@@ -1142,6 +1156,12 @@ export function App() {
                   setNotice({ kind: "success", text: `Created a draft for ${candidate.name}.` });
                 }}
               />
+            ) : null}
+
+            {activeWorkspace === "mmwave" ? (
+              <Suspense fallback={<section className="panel loading-panel">Loading mmWave Studio...</section>}>
+                <LazyMmwaveWorkspace />
+              </Suspense>
             ) : null}
           </>
         ) : null}

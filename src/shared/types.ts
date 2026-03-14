@@ -155,6 +155,7 @@ export interface HealthResponse {
   hasToken: boolean;
   version?: string;
   error?: string;
+  mmwaveConfigured?: boolean;
 }
 
 export interface AuthStatusResponse {

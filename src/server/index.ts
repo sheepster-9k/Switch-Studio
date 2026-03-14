@@ -32,6 +32,8 @@ import type {
 import { loadConfig, type StudioConfig } from "./config.js";
 import { StudioAuthManager } from "./auth.js";
 import { HomeAssistantClient } from "./haClient.js";
+import { LazyMmwaveBridge } from "./mmwave/lazyBridge.js";
+import { registerMmwaveRoutes } from "./mmwave/routes.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -1858,6 +1860,7 @@ async function main(): Promise<void> {
         ok: false,
         haBaseUrl: config.haBaseUrl,
         hasToken: false,
+        mmwaveConfigured: config.mmwave !== null,
         error: "HA_TOKEN is not configured"
       };
     }
@@ -1868,6 +1871,7 @@ async function main(): Promise<void> {
         ok: true,
         haBaseUrl: wsClient.baseUrl,
         hasToken: true,
+        mmwaveConfigured: config.mmwave !== null,
         version: result.version
       };
     } catch (error) {
@@ -1877,6 +1881,7 @@ async function main(): Promise<void> {
         ok: false,
         haBaseUrl: wsClient.baseUrl,
         hasToken: true,
+        mmwaveConfigured: config.mmwave !== null,
         error: error instanceof Error ? error.message : String(error)
       };
     }
@@ -2415,6 +2420,11 @@ async function main(): Promise<void> {
       void reply.header("content-type", "text/html; charset=utf-8");
       return indexHtmlWithBase;
     });
+  }
+
+  if (config.mmwave) {
+    const lazyMmwave = new LazyMmwaveBridge(config.mmwave);
+    await registerMmwaveRoutes(app, lazyMmwave);
   }
 
   await app.listen({ host: config.host, port: config.port });
