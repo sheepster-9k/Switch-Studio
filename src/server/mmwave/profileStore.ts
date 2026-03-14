@@ -11,20 +11,12 @@ import type {
   StudioProfile,
   UpsertProfileRequest
 } from "../../shared/mmwaveTypes.js";
+import { ZERO_AREA, finiteOr, clamp, cloneArea, sortProfiles } from "../../shared/mmwaveUtils.js";
 
 interface ProfileFile {
   version: 1;
   profiles: StudioProfile[];
 }
-
-const ZERO_AREA: AreaRect = {
-  width_min: 0,
-  width_max: 0,
-  depth_min: 0,
-  depth_max: 0,
-  height_min: -600,
-  height_max: 600
-};
 
 const EMPTY_COLLECTION: AreaCollection = {
   area1: { ...ZERO_AREA },
@@ -32,25 +24,6 @@ const EMPTY_COLLECTION: AreaCollection = {
   area3: { ...ZERO_AREA },
   area4: { ...ZERO_AREA }
 };
-
-function finiteOr(value: unknown, fallback: number): number {
-  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
-}
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(max, Math.max(min, value));
-}
-
-function cloneArea(area?: Partial<AreaRect> | null): AreaRect {
-  return {
-    width_min: finiteOr(area?.width_min, ZERO_AREA.width_min),
-    width_max: finiteOr(area?.width_max, ZERO_AREA.width_max),
-    depth_min: finiteOr(area?.depth_min, ZERO_AREA.depth_min),
-    depth_max: finiteOr(area?.depth_max, ZERO_AREA.depth_max),
-    height_min: finiteOr(area?.height_min, ZERO_AREA.height_min),
-    height_max: finiteOr(area?.height_max, ZERO_AREA.height_max)
-  };
-}
 
 function cloneCollection(input?: Partial<Record<AreaSlot, Partial<AreaRect> | null>> | null): AreaCollection {
   return {
@@ -108,13 +81,6 @@ function normalizeProfile(input: Partial<StudioProfile> & Pick<StudioProfile, "n
       stay: cloneCollection(input.areas?.stay ?? EMPTY_COLLECTION)
     }
   };
-}
-
-function sortProfiles(profiles: StudioProfile[]): StudioProfile[] {
-  return [...profiles].sort((left, right) => {
-    const updated = right.updatedAt.localeCompare(left.updatedAt);
-    return updated !== 0 ? updated : left.name.localeCompare(right.name);
-  });
 }
 
 function importCandidates(payload: unknown): unknown[] {

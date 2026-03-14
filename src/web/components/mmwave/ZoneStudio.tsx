@@ -10,6 +10,7 @@ import type {
   TargetPoint,
   TargetTrail
 } from "../../../shared/mmwaveTypes";
+import { areaDisplayLabel, areaIsZero, clamp, rangeSpan } from "../../../shared/mmwaveUtils";
 import { HelpTip } from "./HelpTip";
 
 const PLANE = { width: 780, height: 520, padding: 48 };
@@ -32,14 +33,6 @@ interface InteractionState {
   anchor: { x: number; y: number };
   pointer: { x: number; y: number };
   rect: AreaRect;
-}
-
-function areaIsZero(area: AreaRect): boolean {
-  return area.width_min === 0 && area.width_max === 0 && area.depth_min === 0 && area.depth_max === 0;
-}
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(max, Math.max(min, value));
 }
 
 function normalizeRect(area: AreaRect, bounds: AreaRect): AreaRect {
@@ -111,17 +104,9 @@ function colorForLayer(kind: AreaKind) {
   return "var(--accent-rose)";
 }
 
-function areaDisplayLabel(labels: DeviceAreaLabels, kind: AreaKind, slot: AreaSlot): string {
-  return labels[kind][slot].trim() || slot;
-}
-
 function areaCanvasLabel(labels: DeviceAreaLabels, kind: AreaKind, slot: AreaSlot): string {
   const label = areaDisplayLabel(labels, kind, slot);
   return label.length > 16 ? `${label.slice(0, 15)}...` : label;
-}
-
-function rangeSpan(min: number, max: number): number {
-  return Math.abs(max - min);
 }
 
 function renderAreaCollection(

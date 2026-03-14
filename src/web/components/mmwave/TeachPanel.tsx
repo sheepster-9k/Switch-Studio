@@ -1,4 +1,5 @@
 import type { AreaRect, AreaSlot, DeviceAreaLabels, DeviceSnapshot, TargetPoint } from "../../../shared/mmwaveTypes";
+import { areaDisplayLabel } from "../../../shared/mmwaveUtils";
 import { HelpTip } from "./HelpTip";
 
 interface TeachPanelProps {
@@ -18,17 +19,13 @@ interface TeachPanelProps {
   onUseCornerDraft: () => void;
 }
 
-function areaDisplayLabel(labels: DeviceAreaLabels, slot: AreaSlot): string {
-  return labels.detection[slot].trim() || slot;
-}
-
 function strongestArea(hitCounts: Record<AreaSlot, number>, areaLabels: DeviceAreaLabels): string {
   const entries = Object.entries(hitCounts) as [AreaSlot, number][];
-  const leader = entries.sort((left, right) => right[1] - left[1])[0];
+  const leader = [...entries].sort((left, right) => right[1] - left[1])[0];
   if (!leader || leader[1] === 0) {
     return "No teach data yet.";
   }
-  return `${areaDisplayLabel(areaLabels, leader[0])} is the hottest detection lane so far with ${leader[1]} motion hits.`;
+  return `${areaDisplayLabel(areaLabels, "detection", leader[0])} is the hottest detection lane so far with ${leader[1]} motion hits.`;
 }
 
 export function TeachPanel({
@@ -90,7 +87,7 @@ export function TeachPanel({
           const ratio = hitCounts[slot] / max;
           return (
             <div className="teach-heat-card" key={slot}>
-              <span>{areaDisplayLabel(areaLabels, slot)}</span>
+              <span>{areaDisplayLabel(areaLabels, "detection", slot)}</span>
               <small>{slot}</small>
               <strong>{hitCounts[slot]}</strong>
               <div className="heat-bar">

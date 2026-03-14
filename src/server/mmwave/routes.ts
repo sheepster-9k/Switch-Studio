@@ -11,9 +11,8 @@ import type {
   UpsertProfileRequest
 } from "../../shared/mmwaveTypes.js";
 import type { LazyMmwaveBridge } from "./lazyBridge.js";
+import { AREA_KINDS, AREA_SLOTS, isFiniteNumber, clamp } from "../../shared/mmwaveUtils.js";
 
-const AREA_KINDS: AreaKind[] = ["detection", "interference", "stay"];
-const AREA_SLOTS: AreaSlot[] = ["area1", "area2", "area3", "area4"];
 const DETECT_SENSITIVITY_OPTIONS = new Set(["Low", "Medium", "High (default)", "High"]);
 const DETECT_TRIGGER_OPTIONS = new Set(["Fast (0.2s, default)", "Medium (0.5s)", "Slow (1s)"]);
 const TARGET_INFO_REPORT_OPTIONS = new Set(["Enable", "Disable (default)"]);
@@ -25,14 +24,6 @@ function isAreaKind(value: string): value is AreaKind {
 
 function isAreaSlot(value: string): value is AreaSlot {
   return AREA_SLOTS.includes(value as AreaSlot);
-}
-
-function isFiniteNumber(value: unknown): value is number {
-  return typeof value === "number" && Number.isFinite(value);
-}
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(max, Math.max(min, value));
 }
 
 function isNonEmptyString(value: unknown): value is string {

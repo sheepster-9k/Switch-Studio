@@ -1,12 +1,8 @@
-import { startTransition, useEffect, useRef, useState, type ChangeEvent } from "react";
+import { startTransition, useEffect, useState } from "react";
 
 import {
   applyMmwaveProfile,
   connectMmwaveStream,
-  createMmwaveProfile,
-  deleteMmwaveProfile,
-  fetchMmwaveProfiles,
-  importMmwaveProfiles,
   mmwaveClearInterference,
   mmwaveClearStay,
   mmwaveFindMe,
@@ -14,8 +10,7 @@ import {
   mmwaveResetDetection,
   mmwaveUpdateArea,
   mmwaveUpdateAreaLabel,
-  mmwaveUpdateSettings,
-  updateMmwaveProfile
+  mmwaveUpdateSettings
 } from "../../mmwaveApi";
 import type {
   AreaCollection,
@@ -24,37 +19,23 @@ import type {
   AreaSlot,
   DeviceAreaLabels,
   DeviceSnapshot,
-  StudioProfile,
   StudioSnapshot,
-  TargetPoint,
   TargetTrackingState,
   UpdateSettingsRequest,
   UpsertProfileRequest,
   WsServerMessage
 } from "../../../shared/mmwaveTypes";
+import { ZERO_AREA, AREA_SLOTS, clamp, rangeSpan, areaDisplayLabel } from "../../../shared/mmwaveUtils";
 import { DeviceRail } from "./DeviceRail";
 import { HelpTip } from "./HelpTip";
 import { TeachPanel } from "./TeachPanel";
 import { ZoneStudio } from "./ZoneStudio";
+import { useCornerCapture } from "./useCornerCapture";
+import { applyDeviceUpdate, useDeviceAction } from "./useDeviceAction";
+import { useMmwaveProfiles } from "./useMmwaveProfiles";
+import { useTeachRecording } from "./useTeachRecording";
 
-const ZERO_AREA: AreaRect = {
-  width_min: 0,
-  width_max: 0,
-  depth_min: 0,
-  depth_max: 0,
-  height_min: -600,
-  height_max: 600
-};
-
-const AREA_SLOTS: AreaSlot[] = ["area1", "area2", "area3", "area4"];
 const DEFAULT_LEVEL_LOCAL_PREVIOUS = 255;
-
-function applyDeviceUpdate(devices: DeviceSnapshot[], updated: DeviceSnapshot): DeviceSnapshot[] {
-  const next = devices.filter((device) => device.meta.friendlyName !== updated.meta.friendlyName);
-  next.push(updated);
-  next.sort((left, right) => left.meta.friendlyName.localeCompare(right.meta.friendlyName));
-  return next;
-}
 
 function copyRect(area: AreaRect): AreaRect {
   return { ...area };
@@ -67,51 +48,6 @@ function copyCollection(collection: AreaCollection): AreaCollection {
     area3: { ...collection.area3 },
     area4: { ...collection.area4 }
   };
-}
-
-function emptyHitCounts(): Record<AreaSlot, number> {
-  return { area1: 0, area2: 0, area3: 0, area4: 0 };
-}
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(max, Math.max(min, value));
-}
-
-function resolveCornerCapturePoint(points: TargetPoint[]): { point: TargetPoint | null; status: "none" | "single" | "multiple" } {
-  if (points.length === 0) {
-    return { point: null, status: "none" };
-  }
-  if (points.length > 1) {
-    return { point: null, status: "multiple" };
-  }
-  return { point: points[0], status: "single" };
-}
-
-function rectFromCornerSamples(
-  points: TargetPoint[],
-  fallbackRect: AreaRect,
-  bounds: AreaRect
-): AreaRect | null {
-  if (points.length < 2) {
-    return null;
-  }
-  const xs = points.map((point) => point.x);
-  const ys = points.map((point) => point.y);
-  return {
-    width_min: clamp(Math.min(...xs), bounds.width_min, bounds.width_max),
-    width_max: clamp(Math.max(...xs), bounds.width_min, bounds.width_max),
-    depth_min: clamp(Math.min(...ys), bounds.depth_min, bounds.depth_max),
-    depth_max: clamp(Math.max(...ys), bounds.depth_min, bounds.depth_max),
-    height_min: fallbackRect.height_min,
-    height_max: fallbackRect.height_max
-  };
-}
-
-function sortProfiles(profiles: StudioProfile[]): StudioProfile[] {
-  return [...profiles].sort((left, right) => {
-    const updated = right.updatedAt.localeCompare(left.updatedAt);
-    return updated !== 0 ? updated : left.name.localeCompare(right.name);
-  });
 }
 
 function formatTimestamp(timestamp: string): string {
@@ -150,14 +86,6 @@ function pluralize(value: number, singular: string, plural = `${singular}s`): st
 
 function activeAreaCount(device: DeviceSnapshot): number {
   return Object.values(device.settings.areaOccupancy).filter(Boolean).length;
-}
-
-function rangeSpan(min: number, max: number): number {
-  return Math.abs(max - min);
-}
-
-function areaDisplayLabel(labels: DeviceAreaLabels, kind: AreaKind, slot: AreaSlot): string {
-  return labels[kind][slot].trim() || slot;
 }
 
 function trackingStateLabel(state: TargetTrackingState): string {
@@ -332,50 +260,43 @@ function settingsDraftFromDevice(device: DeviceSnapshot): UpdateSettingsRequest 
 function MmwaveWorkspace() {
   const [bridge, setBridge] = useState<StudioSnapshot["bridge"] | null>(null);
   const [devices, setDevices] = useState<DeviceSnapshot[]>([]);
-  const [profiles, setProfiles] = useState<StudioProfile[]>([]);
   const [selectedName, setSelectedName] = useState<string | null>(null);
   const [selectedKind, setSelectedKind] = useState<AreaKind>("interference");
   const [selectedSlot, setSelectedSlot] = useState<AreaSlot>("area1");
-  const [selectedProfileId, setSelectedProfileId] = useState<string | null>(null);
   const [editorRect, setEditorRect] = useState<AreaRect>(copyRect(ZERO_AREA));
   const [settingsDraft, setSettingsDraft] = useState<UpdateSettingsRequest | null>(null);
   const [editorDirty, setEditorDirty] = useState(false);
   const [settingsDirty, setSettingsDirty] = useState(false);
   const [labelDirty, setLabelDirty] = useState(false);
-  const [profileName, setProfileName] = useState("");
-  const [profileNotes, setProfileNotes] = useState("");
   const [labelDraft, setLabelDraft] = useState("");
-  const [busyAction, setBusyAction] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [recording, setRecording] = useState(false);
-  const [hitCounts, setHitCounts] = useState<Record<AreaSlot, number>>(emptyHitCounts);
-  const [eventCount, setEventCount] = useState(0);
-  const [cornerSamples, setCornerSamples] = useState<TargetPoint[]>([]);
-  const previousOccupancy = useRef<Record<string, Record<AreaSlot, boolean | null>>>({});
-  const importInputRef = useRef<HTMLInputElement | null>(null);
 
-  async function reloadProfiles(preferredId?: string | null) {
-    const next = sortProfiles(await fetchMmwaveProfiles());
-    setProfiles(next);
-    setSelectedProfileId((current) => {
-      const keep = preferredId ?? current;
-      return keep && next.some((profile) => profile.id === keep) ? keep : next[0]?.id ?? null;
-    });
-  }
+  const device = devices.find((d) => d.meta.friendlyName === selectedName) ?? null;
 
-  useEffect(() => {
-    fetchMmwaveProfiles()
-      .then((profileList) => {
-        startTransition(() => {
-          const sortedProfiles = sortProfiles(profileList);
-          setProfiles(sortedProfiles);
-          setSelectedProfileId((current) => current ?? sortedProfiles[0]?.id ?? null);
-        });
-      })
-      .catch((nextError) => {
-        setError(nextError instanceof Error ? nextError.message : String(nextError));
-      });
-  }, []);
+  const { busyAction, error, setError, setBusyAction, runAction } = useDeviceAction(setDevices);
+  const { recording, hitCounts, eventCount, toggleRecording, resetTeach } = useTeachRecording(device);
+  const {
+    profiles, selectedProfile, selectedProfileId, profileName, profileNotes, importInputRef,
+    setSelectedProfileId, setProfileName, setProfileNotes,
+    saveProfile: saveProfileHook, removeProfile, startNewProfileDraft, exportProfile, importProfileFile
+  } = useMmwaveProfiles(device?.meta.friendlyName ?? null, setBusyAction, setError);
+
+  const corner = useCornerCapture(device, selectedKind, selectedSlot, editorRect, setError);
+  const { cornerSamples, cornerDraftRect, liveCornerPoint, liveCornerStatus, captureCornerSample, resetCorners } = corner;
+
+  const selectedAreaLabel = device ? device.areaLabels[selectedKind][selectedSlot] : "";
+  const selectedSlotLabel = device
+    ? areaDisplayLabel(device.areaLabels, selectedKind, selectedSlot)
+    : selectedSlot;
+  const liveAreaCount = device ? activeAreaCount(device) : 0;
+  const liveTargetCount = device ? device.targetPoints.length : 0;
+  const liveTrackCount = device ? device.targetTrails.length : 0;
+  const trackingStatus = device ? trackingStateLabel(device.targetTrackingState) : "Occupancy fallback";
+  const trackingStatusDescription = device
+    ? trackingStateDescription(device.targetTrackingState)
+    : "Target reporting is unavailable until a switch is selected.";
+  const slotWidthSpan = rangeSpan(editorRect.width_min, editorRect.width_max);
+  const slotDepthSpan = rangeSpan(editorRect.depth_min, editorRect.depth_max);
+  const slotHeightSpan = rangeSpan(editorRect.height_min, editorRect.height_max);
 
   useEffect(() => {
     return connectMmwaveStream((message: WsServerMessage) => {
@@ -399,61 +320,27 @@ function MmwaveWorkspace() {
     });
   }, []);
 
-  const selectedDevice = devices.find((device) => device.meta.friendlyName === selectedName) ?? null;
-  const selectedProfile = profiles.find((profile) => profile.id === selectedProfileId) ?? null;
-  const cornerCapture = selectedDevice && selectedDevice.supportsTargetDots
-    ? resolveCornerCapturePoint(selectedDevice.targetPoints)
-    : { point: null, status: "none" as const };
-  const liveCornerPoint = cornerCapture.point;
-  const selectedAreaLabel = selectedDevice ? selectedDevice.areaLabels[selectedKind][selectedSlot] : "";
-  const selectedSlotLabel = selectedDevice
-    ? areaDisplayLabel(selectedDevice.areaLabels, selectedKind, selectedSlot)
-    : selectedSlot;
-  const cornerDraftRect = selectedDevice
-    ? rectFromCornerSamples(cornerSamples, editorRect, selectedDevice.settings.baseBounds)
-    : null;
-  const liveAreaCount = selectedDevice ? activeAreaCount(selectedDevice) : 0;
-  const liveTargetCount = selectedDevice ? selectedDevice.targetPoints.length : 0;
-  const liveTrackCount = selectedDevice ? selectedDevice.targetTrails.length : 0;
-  const trackingStatus = selectedDevice ? trackingStateLabel(selectedDevice.targetTrackingState) : "Occupancy fallback";
-  const trackingStatusDescription = selectedDevice
-    ? trackingStateDescription(selectedDevice.targetTrackingState)
-    : "Target reporting is unavailable until a switch is selected.";
-  const slotWidthSpan = rangeSpan(editorRect.width_min, editorRect.width_max);
-  const slotDepthSpan = rangeSpan(editorRect.depth_min, editorRect.depth_max);
-  const slotHeightSpan = rangeSpan(editorRect.height_min, editorRect.height_max);
-
   useEffect(() => {
-    if (!selectedDevice) {
+    if (!device) {
       return;
     }
-    setEditorRect(copyRect(selectedDevice.areas[selectedKind][selectedSlot]));
+    setEditorRect(copyRect(device.areas[selectedKind][selectedSlot]));
     setEditorDirty(false);
-    setSettingsDraft(settingsDraftFromDevice(selectedDevice));
+    setSettingsDraft(settingsDraftFromDevice(device));
     setSettingsDirty(false);
     setLabelDraft(selectedAreaLabel);
     setLabelDirty(false);
-  }, [selectedDevice?.meta.friendlyName, selectedKind, selectedSlot]);
+  }, [device?.meta.friendlyName, selectedKind, selectedSlot]);
 
   useEffect(() => {
-    setRecording(false);
-    setEventCount(0);
-    setHitCounts(emptyHitCounts());
-  }, [selectedDevice?.meta.friendlyName]);
-
-  useEffect(() => {
-    setCornerSamples([]);
-  }, [selectedDevice?.meta.friendlyName, selectedKind, selectedSlot]);
-
-  useEffect(() => {
-    if (!selectedDevice) {
+    if (!device) {
       return;
     }
     if (!editorDirty) {
-      setEditorRect(copyRect(selectedDevice.areas[selectedKind][selectedSlot]));
+      setEditorRect(copyRect(device.areas[selectedKind][selectedSlot]));
     }
     if (!settingsDirty) {
-      setSettingsDraft(settingsDraftFromDevice(selectedDevice));
+      setSettingsDraft(settingsDraftFromDevice(device));
     }
     if (!labelDirty) {
       setLabelDraft(selectedAreaLabel);
@@ -462,173 +349,18 @@ function MmwaveWorkspace() {
     editorDirty,
     labelDirty,
     selectedAreaLabel,
-    selectedDevice?.updatedAt,
+    device?.updatedAt,
     selectedKind,
     selectedSlot,
     settingsDirty
   ]);
 
-  useEffect(() => {
-    if (selectedProfile) {
-      setProfileName(selectedProfile.name);
-      setProfileNotes(selectedProfile.notes);
-      return;
-    }
-    if (selectedDevice) {
-      setProfileName((current) => current || `${selectedDevice.meta.friendlyName} tune`);
-    }
-  }, [selectedDevice?.meta.friendlyName, selectedProfile]);
-
-  useEffect(() => {
-    if (!selectedDevice || !recording) {
-      return;
-    }
-    const before = previousOccupancy.current[selectedDevice.meta.friendlyName] ?? {
-      area1: null,
-      area2: null,
-      area3: null,
-      area4: null
-    };
-    const next = selectedDevice.settings.areaOccupancy;
-    let sawTransition = false;
-    const increments: Record<AreaSlot, number> = { area1: 0, area2: 0, area3: 0, area4: 0 };
-    for (const slot of AREA_SLOTS) {
-      if (next[slot] && !before[slot]) {
-        increments[slot] += 1;
-        sawTransition = true;
-      }
-    }
-    previousOccupancy.current[selectedDevice.meta.friendlyName] = next;
-    if (sawTransition) {
-      setEventCount((current) => current + 1);
-      setHitCounts((current) => ({
-        area1: current.area1 + increments.area1,
-        area2: current.area2 + increments.area2,
-        area3: current.area3 + increments.area3,
-        area4: current.area4 + increments.area4
-      }));
-    }
-  }, [recording, selectedDevice?.updatedAt]);
-
-  async function runAction(label: string, action: () => Promise<DeviceSnapshot>): Promise<DeviceSnapshot | null> {
-    if (!selectedDevice) {
-      return null;
-    }
-    setBusyAction(label);
-    setError(null);
-    try {
-      const updated = await action();
-      setDevices((current) => applyDeviceUpdate(current, updated));
-      return updated;
-    } catch (nextError) {
-      setError(nextError instanceof Error ? nextError.message : String(nextError));
-      return null;
-    } finally {
-      setBusyAction(null);
-    }
-  }
-
   async function saveProfile(asUpdate: boolean) {
-    if (!selectedDevice) {
+    if (!device) {
       return;
     }
-    const payload = profilePayloadFromDevice(selectedDevice, profileName, profileNotes);
-    const label = asUpdate ? "update-profile" : "save-profile";
-    setBusyAction(label);
-    setError(null);
-    try {
-      const saved =
-        asUpdate && selectedProfile
-          ? await updateMmwaveProfile(selectedProfile.id, payload)
-          : await createMmwaveProfile(payload);
-      await reloadProfiles(saved.id);
-    } catch (nextError) {
-      setError(nextError instanceof Error ? nextError.message : String(nextError));
-    } finally {
-      setBusyAction(null);
-    }
-  }
-
-  async function removeProfile() {
-    if (!selectedProfile) {
-      return;
-    }
-    if (!window.confirm(`Delete profile "${selectedProfile.name}"?`)) {
-      return;
-    }
-    setBusyAction("delete-profile");
-    setError(null);
-    try {
-      await deleteMmwaveProfile(selectedProfile.id);
-      setSelectedProfileId(null);
-      await reloadProfiles(null);
-      if (selectedDevice) {
-        setProfileName(`${selectedDevice.meta.friendlyName} tune`);
-        setProfileNotes("");
-      }
-    } catch (nextError) {
-      setError(nextError instanceof Error ? nextError.message : String(nextError));
-    } finally {
-      setBusyAction(null);
-    }
-  }
-
-  function startNewProfileDraft() {
-    setSelectedProfileId(null);
-    if (selectedDevice) {
-      setProfileName(`${selectedDevice.meta.friendlyName} tune`);
-    } else {
-      setProfileName("");
-    }
-    setProfileNotes("");
-  }
-
-  function exportProfile() {
-    if (!selectedProfile) {
-      return;
-    }
-    const blob = new Blob([JSON.stringify(selectedProfile, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download =
-      `${selectedProfile.name.replace(/[^a-z0-9-_]+/gi, "_").toLowerCase() || "profile"}.json`;
-    anchor.click();
-    URL.revokeObjectURL(url);
-  }
-
-  async function importProfileFile(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0];
-    event.target.value = "";
-    if (!file) {
-      return;
-    }
-    setBusyAction("import-profile");
-    setError(null);
-    try {
-      const raw = await file.text();
-      const payload = JSON.parse(raw) as unknown;
-      const imported = sortProfiles(await importMmwaveProfiles(payload));
-      setProfiles(imported);
-      setSelectedProfileId(imported[0]?.id ?? null);
-    } catch (nextError) {
-      setError(nextError instanceof Error ? nextError.message : String(nextError));
-    } finally {
-      setBusyAction(null);
-    }
-  }
-
-  function captureCornerSample() {
-    if (cornerCapture.status === "multiple") {
-      setError("Multiple target dots are active. Leave only one person in the sensing area before capturing a corner.");
-      return;
-    }
-    if (!liveCornerPoint) {
-      setError("No live target dot is available. Enable target dots and stand still until a dot appears.");
-      return;
-    }
-    setError(null);
-    setCornerSamples((current) => [...current, liveCornerPoint]);
+    const payload = profilePayloadFromDevice(device, profileName, profileNotes);
+    await saveProfileHook(asUpdate, payload);
   }
 
   function useCornerDraftForSlot() {
@@ -665,7 +397,7 @@ function MmwaveWorkspace() {
     );
   }
 
-  if (!selectedDevice || !settingsDraft || !bridge) {
+  if (!device || !settingsDraft || !bridge) {
     return (
       <div className="mmwave-workspace">
         <section className="panel loading-state">Loading mmWave Studio...</section>
@@ -674,10 +406,10 @@ function MmwaveWorkspace() {
   }
 
   const motionOnUsesPreviousLevel = isPreviousLocalTurnOnLevel(
-    settingsDraft.defaultLevelLocal ?? selectedDevice.settings.defaultLevelLocal
+    settingsDraft.defaultLevelLocal ?? device.settings.defaultLevelLocal
   );
   const motionOnLevelPercent = percentFromDefaultLevelLocal(
-    settingsDraft.defaultLevelLocal ?? selectedDevice.settings.defaultLevelLocal
+    settingsDraft.defaultLevelLocal ?? device.settings.defaultLevelLocal
   );
 
   return (
@@ -685,7 +417,7 @@ function MmwaveWorkspace() {
       <header className="mmwave-header panel">
         <div>
           <p className="eyebrow">mmWave Studio</p>
-          <h2>{selectedDevice.meta.friendlyName}</h2>
+          <h2>{device.meta.friendlyName}</h2>
           <p className="panel-copy">
             Tune detection, exclusion, and stay geometry with live MQTT state for your Inovelli mmWave switches.
           </p>
@@ -717,7 +449,7 @@ function MmwaveWorkspace() {
               <button
                 className="action-button"
                 disabled={Boolean(busyAction)}
-                onClick={() => runAction("identify", () => mmwaveFindMe(selectedDevice.meta.friendlyName))}
+                onClick={() => runAction("identify", () => mmwaveFindMe(device.meta.friendlyName))}
                 type="button"
               >
                 {busyAction === "identify" ? "Locating..." : "Find this switch"}
@@ -744,19 +476,19 @@ function MmwaveWorkspace() {
             <div className="runtime-grid">
               <div>
                 <span>Availability</span>
-                <strong>{selectedDevice.availability}</strong>
+                <strong>{device.availability}</strong>
               </div>
               <div>
                 <span>Occupancy</span>
-                <strong>{selectedDevice.settings.occupancy ? "occupied" : "clear"}</strong>
+                <strong>{device.settings.occupancy ? "occupied" : "clear"}</strong>
               </div>
               <div>
                 <span>Illuminance</span>
-                <strong>{selectedDevice.settings.illuminance ?? "n/a"}</strong>
+                <strong>{device.settings.illuminance ?? "n/a"}</strong>
               </div>
               <div>
                 <span>Firmware</span>
-                <strong>{selectedDevice.settings.mmwaveVersion ?? "n/a"}</strong>
+                <strong>{device.settings.mmwaveVersion ?? "n/a"}</strong>
               </div>
               <div>
                 <span>Tracking</span>
@@ -772,7 +504,7 @@ function MmwaveWorkspace() {
               </div>
               <div>
                 <span>Last target frame</span>
-                <strong>{selectedDevice.targetTelemetryAt ? formatTimestamp(selectedDevice.targetTelemetryAt) : "none yet"}</strong>
+                <strong>{device.targetTelemetryAt ? formatTimestamp(device.targetTelemetryAt) : "none yet"}</strong>
               </div>
             </div>
             <p className="runtime-tracking-copy">{trackingStatusDescription}</p>
@@ -780,19 +512,19 @@ function MmwaveWorkspace() {
               {AREA_SLOTS.map((slot) => (
                 <span
                   key={slot}
-                  className={selectedDevice.settings.areaOccupancy[slot] ? "lit" : ""}
-                  title={`${slot}${selectedDevice.areaLabels.detection[slot] ? ` - ${selectedDevice.areaLabels.detection[slot]}` : ""}`}
+                  className={device.settings.areaOccupancy[slot] ? "lit" : ""}
+                  title={`${slot}${device.areaLabels.detection[slot] ? ` - ${device.areaLabels.detection[slot]}` : ""}`}
                 >
-                  {areaDisplayLabel(selectedDevice.areaLabels, "detection", slot)}
+                  {areaDisplayLabel(device.areaLabels, "detection", slot)}
                 </span>
               ))}
             </div>
             <ul className="note-list">
-              {selectedDevice.notes.map((note) => (
+              {device.notes.map((note) => (
                 <li key={note}>{note}</li>
               ))}
             </ul>
-            {selectedDevice.targetTrackingState === "disabled" ? (
+            {device.targetTrackingState === "disabled" ? (
               <div className="live-tracking-callout">
                 <p>Enable target reporting on this switch for live tracked targets.</p>
                 <button
@@ -800,7 +532,7 @@ function MmwaveWorkspace() {
                   disabled={Boolean(busyAction)}
                   onClick={() =>
                     runAction("enable-target-reporting", () =>
-                      mmwaveUpdateSettings(selectedDevice.meta.friendlyName, { targetInfoReport: "Enable" })
+                      mmwaveUpdateSettings(device.meta.friendlyName, { targetInfoReport: "Enable" })
                     )
                   }
                   type="button"
@@ -851,13 +583,13 @@ function MmwaveWorkspace() {
                     className={selectedSlot === slot ? "selected" : ""}
                     onClick={() => setSelectedSlot(slot)}
                     title={
-                      selectedDevice
-                        ? `${slot}${selectedDevice.areaLabels[selectedKind][slot] ? ` - ${selectedDevice.areaLabels[selectedKind][slot]}` : ""}`
+                      device
+                        ? `${slot}${device.areaLabels[selectedKind][slot] ? ` - ${device.areaLabels[selectedKind][slot]}` : ""}`
                         : slot
                     }
                     type="button"
                   >
-                    {areaDisplayLabel(selectedDevice.areaLabels, selectedKind, slot)}
+                    {areaDisplayLabel(device.areaLabels, selectedKind, slot)}
                   </button>
                 ))}
               </div>
@@ -872,11 +604,11 @@ function MmwaveWorkspace() {
           </div>
 
           <ZoneStudio
-            device={selectedDevice}
+            device={device}
             selectedKind={selectedKind}
             selectedSlot={selectedSlot}
             editorRect={editorRect}
-            areaLabels={selectedDevice.areaLabels}
+            areaLabels={device.areaLabels}
             heatCounts={hitCounts}
             cornerTeachPoints={cornerSamples}
             cornerTeachRect={cornerDraftRect}
@@ -887,25 +619,19 @@ function MmwaveWorkspace() {
           />
 
           <TeachPanel
-            device={selectedDevice}
+            device={device}
             recording={recording}
             hitCounts={hitCounts}
             eventCount={eventCount}
-            areaLabels={selectedDevice.areaLabels}
+            areaLabels={device.areaLabels}
             liveCornerPoint={liveCornerPoint}
-            liveCornerStatus={cornerCapture.status}
+            liveCornerStatus={liveCornerStatus}
             cornerSamples={cornerSamples}
             cornerDraftRect={cornerDraftRect}
-            onToggle={() => {
-              setRecording((current) => !current);
-              previousOccupancy.current[selectedDevice.meta.friendlyName] = selectedDevice.settings.areaOccupancy;
-            }}
-            onReset={() => {
-              setEventCount(0);
-              setHitCounts(emptyHitCounts());
-            }}
+            onToggle={toggleRecording}
+            onReset={resetTeach}
             onCaptureCorner={captureCornerSample}
-            onResetCorners={() => setCornerSamples([])}
+            onResetCorners={resetCorners}
             onUseCornerDraft={useCornerDraftForSlot}
           />
         </section>
@@ -928,7 +654,7 @@ function MmwaveWorkspace() {
               <button
                 className="ghost-button"
                 onClick={() => {
-                  setEditorRect(copyRect(selectedDevice.areas[selectedKind][selectedSlot]));
+                  setEditorRect(copyRect(device.areas[selectedKind][selectedSlot]));
                   setEditorDirty(false);
                 }}
                 type="button"
@@ -981,7 +707,7 @@ function MmwaveWorkspace() {
                 disabled={Boolean(busyAction)}
                 onClick={() => {
                   void runAction("apply-area", () =>
-                    mmwaveUpdateArea(selectedDevice.meta.friendlyName, selectedKind, selectedSlot, editorRect)
+                    mmwaveUpdateArea(device.meta.friendlyName, selectedKind, selectedSlot, editorRect)
                   ).then((updated) => {
                     if (updated) {
                       setEditorDirty(false);
@@ -997,7 +723,7 @@ function MmwaveWorkspace() {
                 disabled={Boolean(busyAction)}
                 onClick={() => {
                   void runAction("save-area-label", () =>
-                    mmwaveUpdateAreaLabel(selectedDevice.meta.friendlyName, selectedKind, selectedSlot, labelDraft)
+                    mmwaveUpdateAreaLabel(device.meta.friendlyName, selectedKind, selectedSlot, labelDraft)
                   ).then((updated) => {
                     if (updated) {
                       setLabelDirty(false);
@@ -1013,7 +739,7 @@ function MmwaveWorkspace() {
                 disabled={Boolean(busyAction)}
                 onClick={() => {
                   void runAction("clear-area", () =>
-                    mmwaveUpdateArea(selectedDevice.meta.friendlyName, selectedKind, selectedSlot, ZERO_AREA)
+                    mmwaveUpdateArea(device.meta.friendlyName, selectedKind, selectedSlot, ZERO_AREA)
                   ).then((updated) => {
                     if (updated) {
                       setEditorDirty(false);
@@ -1240,18 +966,18 @@ function MmwaveWorkspace() {
                   </span>
                   <input
                     type="number"
-                    value={settingsDraft.baseBounds?.[key] ?? selectedDevice.settings.baseBounds[key]}
+                    value={settingsDraft.baseBounds?.[key] ?? device.settings.baseBounds[key]}
                     onChange={(event) => {
                       setSettingsDraft((current) =>
                         current
                           ? {
                               ...current,
                               baseBounds: {
-                                ...(current.baseBounds ?? selectedDevice.settings.baseBounds),
+                                ...(current.baseBounds ?? device.settings.baseBounds),
                                 [key]: nextFiniteInputValue(
                                   event.target.value,
                                   event.target.valueAsNumber,
-                                  (current.baseBounds ?? selectedDevice.settings.baseBounds)[key]
+                                  (current.baseBounds ?? device.settings.baseBounds)[key]
                                 )
                               }
                             }
@@ -1269,7 +995,7 @@ function MmwaveWorkspace() {
                 disabled={Boolean(busyAction)}
                 onClick={() => {
                   void runAction("apply-settings", () =>
-                    mmwaveUpdateSettings(selectedDevice.meta.friendlyName, settingsDraft)
+                    mmwaveUpdateSettings(device.meta.friendlyName, settingsDraft)
                   ).then((updated) => {
                     if (updated) {
                       setSettingsDirty(false);
@@ -1287,7 +1013,7 @@ function MmwaveWorkspace() {
                   setEditorDirty(false);
                   setSettingsDirty(false);
                   setLabelDirty(false);
-                  void runAction("query-areas", () => mmwaveQueryAreas(selectedDevice.meta.friendlyName));
+                  void runAction("query-areas", () => mmwaveQueryAreas(device.meta.friendlyName));
                 }}
                 type="button"
               >
@@ -1368,18 +1094,18 @@ function MmwaveWorkspace() {
                   if (!selectedProfile) {
                     return;
                   }
-                  if (!window.confirm(`Apply "${selectedProfile.name}" to ${selectedDevice.meta.friendlyName}?`)) {
+                  if (!window.confirm(`Apply "${selectedProfile.name}" to ${device.meta.friendlyName}?`)) {
                     return;
                   }
                   return runAction("apply-profile", () =>
-                    applyMmwaveProfile(selectedProfile.id, selectedDevice.meta.friendlyName)
+                    applyMmwaveProfile(selectedProfile.id, device.meta.friendlyName)
                   );
                 }}
                 type="button"
               >
                 {busyAction === "apply-profile"
                   ? "Applying profile..."
-                  : `Apply to ${selectedDevice.meta.friendlyName}`}
+                  : `Apply to ${device.meta.friendlyName}`}
               </button>
             </div>
             <div className="button-row">
@@ -1433,7 +1159,7 @@ function MmwaveWorkspace() {
               <button
                 className="ghost-button"
                 disabled={Boolean(busyAction)}
-                onClick={() => runAction("reset-detection", () => mmwaveResetDetection(selectedDevice.meta.friendlyName))}
+                onClick={() => runAction("reset-detection", () => mmwaveResetDetection(device.meta.friendlyName))}
                 type="button"
               >
                 Reset detection areas
@@ -1441,7 +1167,7 @@ function MmwaveWorkspace() {
               <button
                 className="ghost-button"
                 disabled={Boolean(busyAction)}
-                onClick={() => runAction("clear-interference", () => mmwaveClearInterference(selectedDevice.meta.friendlyName))}
+                onClick={() => runAction("clear-interference", () => mmwaveClearInterference(device.meta.friendlyName))}
                 type="button"
               >
                 Clear exclusion areas
@@ -1449,7 +1175,7 @@ function MmwaveWorkspace() {
               <button
                 className="ghost-button"
                 disabled={Boolean(busyAction)}
-                onClick={() => runAction("clear-stay", () => mmwaveClearStay(selectedDevice.meta.friendlyName))}
+                onClick={() => runAction("clear-stay", () => mmwaveClearStay(device.meta.friendlyName))}
                 type="button"
               >
                 Clear stay areas

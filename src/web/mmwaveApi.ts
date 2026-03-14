@@ -183,7 +183,11 @@ export function connectMmwaveStream(onMessage: (message: WsServerMessage) => voi
       reconnectDelayMs = 1000;
     };
     socket.onmessage = (event) => {
-      onMessage(JSON.parse(event.data) as WsServerMessage);
+      try {
+        onMessage(JSON.parse(event.data) as WsServerMessage);
+      } catch {
+        // Ignore malformed messages
+      }
     };
     socket.onerror = () => {
       socket?.close();

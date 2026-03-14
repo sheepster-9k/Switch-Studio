@@ -22,19 +22,11 @@ import type {
   TargetTrackingState,
   UpdateSettingsRequest
 } from "../../shared/mmwaveTypes.js";
+import { ZERO_AREA, finiteOr, clamp, cloneArea, cloneAreaCollection, isFiniteNumber } from "../../shared/mmwaveUtils.js";
 import type { MmwaveConfig } from "../config.js";
 
 type StudioConfig = MmwaveConfig;
 import type { AreaLabelStore } from "./areaLabelStore.js";
-
-const ZERO_AREA: AreaRect = {
-  width_min: 0,
-  width_max: 0,
-  depth_min: 0,
-  depth_max: 0,
-  height_min: -600,
-  height_max: 600
-};
 
 const AREA_KEYS: Record<AreaKind, string> = {
   detection: "mmwave_detection_areas",
@@ -85,25 +77,6 @@ function parseJson(payload: Buffer): unknown {
   return null;
 }
 
-function finiteOr(value: unknown, fallback: number): number {
-  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
-}
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(max, Math.max(min, value));
-}
-
-function cloneArea(area?: Partial<AreaRect> | null): AreaRect {
-  return {
-    width_min: finiteOr(area?.width_min, ZERO_AREA.width_min),
-    width_max: finiteOr(area?.width_max, ZERO_AREA.width_max),
-    depth_min: finiteOr(area?.depth_min, ZERO_AREA.depth_min),
-    depth_max: finiteOr(area?.depth_max, ZERO_AREA.depth_max),
-    height_min: finiteOr(area?.height_min, ZERO_AREA.height_min),
-    height_max: finiteOr(area?.height_max, ZERO_AREA.height_max)
-  };
-}
-
 function normalizeAreas(raw: unknown): AreaCollection {
   const source = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
   return {
@@ -111,15 +84,6 @@ function normalizeAreas(raw: unknown): AreaCollection {
     area2: cloneArea(source.area2 as AreaRect | undefined),
     area3: cloneArea(source.area3 as AreaRect | undefined),
     area4: cloneArea(source.area4 as AreaRect | undefined)
-  };
-}
-
-function cloneAreaCollection(collection: AreaCollection): AreaCollection {
-  return {
-    area1: cloneArea(collection.area1),
-    area2: cloneArea(collection.area2),
-    area3: cloneArea(collection.area3),
-    area4: cloneArea(collection.area4)
   };
 }
 
@@ -194,10 +158,6 @@ function normalizeTargetPoints(raw: Record<string, unknown>): TargetPoint[] {
   return [];
 }
 
-function hasNumeric(value: unknown): value is number {
-  return typeof value === "number" && Number.isFinite(value);
-}
-
 function readIndexedNumber(record: Record<string, unknown>, base: string, index: number): number | undefined {
   const candidates = [
     `${base}${index}`,
@@ -208,7 +168,7 @@ function readIndexedNumber(record: Record<string, unknown>, base: string, index:
   ];
   for (const key of candidates) {
     const value = record[key];
-    if (hasNumeric(value)) {
+    if (isFiniteNumber(value)) {
       return value;
     }
   }
@@ -222,10 +182,10 @@ function normalizeTelemetryTargets(payload: unknown): TargetPoint[] {
       .map((entry) => ({
         x: finiteOr(entry.x, 0),
         y: finiteOr(entry.y, 0),
-        z: hasNumeric(entry.z) ? entry.z : undefined,
-        id: hasNumeric(entry.id) ? entry.id : undefined,
-        speed: hasNumeric(entry.speed) ? entry.speed : hasNumeric(entry.dop) ? entry.dop : undefined,
-        confidence: hasNumeric(entry.confidence) ? entry.confidence : undefined,
+        z: isFiniteNumber(entry.z) ? entry.z : undefined,
+        id: isFiniteNumber(entry.id) ? entry.id : undefined,
+        speed: isFiniteNumber(entry.speed) ? entry.speed : isFiniteNumber(entry.dop) ? entry.dop : undefined,
+        confidence: isFiniteNumber(entry.confidence) ? entry.confidence : undefined,
         label: typeof entry.label === "string" ? entry.label : undefined
       }))
       .filter((entry) => Number.isFinite(entry.x) && Number.isFinite(entry.y));
@@ -245,25 +205,25 @@ function normalizeTelemetryTargets(payload: unknown): TargetPoint[] {
       return nested;
     }
   }
-  if (hasNumeric(record.x) && hasNumeric(record.y)) {
+  if (isFiniteNumber(record.x) && isFiniteNumber(record.y)) {
     return [
       {
         x: record.x,
         y: record.y,
-        z: hasNumeric(record.z) ? record.z : undefined,
-        id: hasNumeric(record.id) ? record.id : undefined,
-        speed: hasNumeric(record.speed) ? record.speed : hasNumeric(record.dop) ? record.dop : undefined
+        z: isFiniteNumber(record.z) ? record.z : undefined,
+        id: isFiniteNumber(record.id) ? record.id : undefined,
+        speed: isFiniteNumber(record.speed) ? record.speed : isFiniteNumber(record.dop) ? record.dop : undefined
       }
     ];
   }
 
-  const count = hasNumeric(record.target_count)
+  const count = isFiniteNumber(record.target_count)
     ? record.target_count
-    : hasNumeric(record.target_num)
+    : isFiniteNumber(record.target_num)
       ? record.target_num
-      : hasNumeric(record.targetNum)
+      : isFiniteNumber(record.targetNum)
         ? record.targetNum
-        : hasNumeric(record.count)
+        : isFiniteNumber(record.count)
           ? record.count
           : 0;
 
@@ -980,13 +940,13 @@ export class MqttStudioBridge {
 
   async updateSettings(name: string, patch: UpdateSettingsRequest): Promise<DeviceSnapshot | null> {
     const payload: Record<string, unknown> = {};
-    if (patch.roomPreset) {
+    if (patch.roomPreset !== undefined) {
       payload[SETTING_KEYS.roomPreset] = patch.roomPreset;
     }
-    if (patch.detectSensitivity) {
+    if (patch.detectSensitivity !== undefined) {
       payload[SETTING_KEYS.detectSensitivity] = patch.detectSensitivity;
     }
-    if (patch.detectTrigger) {
+    if (patch.detectTrigger !== undefined) {
       payload[SETTING_KEYS.detectTrigger] = patch.detectTrigger;
     }
     if (typeof patch.holdTime === "number" && Number.isFinite(patch.holdTime)) {
@@ -995,10 +955,10 @@ export class MqttStudioBridge {
     if (typeof patch.stayLife === "number" && Number.isFinite(patch.stayLife)) {
       payload[SETTING_KEYS.stayLife] = patch.stayLife;
     }
-    if (patch.targetInfoReport) {
+    if (patch.targetInfoReport !== undefined) {
       payload[SETTING_KEYS.targetInfoReport] = patch.targetInfoReport;
     }
-    if (patch.controlWiredDevice) {
+    if (patch.controlWiredDevice !== undefined) {
       payload[SETTING_KEYS.controlWiredDevice] = patch.controlWiredDevice;
     }
     if (typeof patch.defaultLevelLocal === "number" && Number.isFinite(patch.defaultLevelLocal)) {
@@ -1033,7 +993,7 @@ export class MqttStudioBridge {
   }
 
   async updateAreaLabel(name: string, kind: AreaKind, slot: AreaSlot, label: string): Promise<DeviceSnapshot | null> {
-    if (!this.getDevice(name)) {
+    if (!this.metas.has(name)) {
       return null;
     }
     await this.areaLabelStore.setLabel(name, kind, slot, label);

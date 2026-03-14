@@ -2,14 +2,12 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 
 import type { AreaKind, AreaLabelCollection, AreaSlot, DeviceAreaLabels } from "../../shared/mmwaveTypes.js";
+import { AREA_KINDS, AREA_SLOTS } from "../../shared/mmwaveUtils.js";
 
 interface AreaLabelFile {
   version: 1;
   devices: Record<string, DeviceAreaLabels>;
 }
-
-const AREA_KINDS: AreaKind[] = ["detection", "interference", "stay"];
-const AREA_SLOTS: AreaSlot[] = ["area1", "area2", "area3", "area4"];
 
 function emptyCollection(): AreaLabelCollection {
   return {
@@ -59,6 +57,11 @@ export class AreaLabelStore {
       );
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+        this.cache = {};
+        await this.write();
+        return;
+      }
+      if (error instanceof SyntaxError) {
         this.cache = {};
         await this.write();
         return;
