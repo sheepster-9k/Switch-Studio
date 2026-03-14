@@ -1796,17 +1796,17 @@ async function serveLocalBlueprintImage(
 async function main(): Promise<void> {
   const config = loadConfig();
   const authManager = new StudioAuthManager(config);
-  let wsClient = new HomeAssistantClient(config);
+  // On restart, restore wsClient from the most recent persisted session if no env token is set.
+  const persistedSession = !config.haToken ? authManager.getLatestSession() : null;
+  let wsClient = persistedSession
+    ? new HomeAssistantClient({ ...config, haToken: persistedSession.accessToken, haBaseUrl: persistedSession.haBaseUrl })
+    : new HomeAssistantClient(config);
   const app = Fastify({ logger: true });
   const webRoot = resolve(__dirname, "../web");
 
   app.get("/api/auth/status", async (request, reply) => {
     reply.header("Cache-Control", "no-store");
-    return {
-      authenticated: wsClient.hasToken,
-      haBaseUrl: wsClient.hasToken ? wsClient.baseUrl : null,
-      defaultHaBaseUrl: config.haBaseUrl
-    };
+    return authManager.status(request, reply, config);
   });
 
   app.post("/api/auth/session", async (request, reply) => {

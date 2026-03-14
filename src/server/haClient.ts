@@ -214,6 +214,9 @@ export class HomeAssistantClient {
       });
 
       socket.on("close", () => {
+        if (!authenticated) {
+          reject(new Error("Home Assistant websocket closed before authentication"));
+        }
         cleanup();
         rejectPending(new Error("Home Assistant websocket closed"));
       });

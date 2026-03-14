@@ -153,6 +153,14 @@ export class StudioAuthManager {
     };
   }
 
+  getLatestSession(): StudioAuthSession | null {
+    this.purgeExpired();
+    if (this.sessions.size === 0) {
+      return null;
+    }
+    return [...this.sessions.values()].sort((a, b) => b.lastUsedAt - a.lastUsedAt)[0] ?? null;
+  }
+
   unauthorized(reply: FastifyReply): { error: string } {
     reply.code(401);
     return {
