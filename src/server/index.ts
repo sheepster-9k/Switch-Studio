@@ -1846,6 +1846,14 @@ async function main(): Promise<void> {
 
   app.get("/api/auth/status", async (request, reply) => {
     reply.header("Cache-Control", "no-store");
+    // When running as an add-on with SUPERVISOR_TOKEN, skip cookie-based auth entirely.
+    if (config.haToken) {
+      return {
+        authenticated: true,
+        haBaseUrl: config.haBaseUrl,
+        defaultHaBaseUrl: config.haBaseUrl
+      };
+    }
     return authManager.status(request, reply, config);
   });
 
