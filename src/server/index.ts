@@ -607,9 +607,11 @@ async function main(): Promise<void> {
       savedConfig.metadata = draft.metadata;
 
       // Persist metadata to sidecar store so it survives HA reloads.
-      if (isRecord(draft.metadata)) {
-        await setPersistedMetadata(savedId, draft.metadata);
+      // If the ID changed (new config), clean up the old entry.
+      if (draft.id && draft.id !== savedId) {
+        await removePersistedMetadata(draft.id);
       }
+      await setPersistedMetadata(savedId, isRecord(draft.metadata) ? draft.metadata : null);
 
       try {
         await syncConfigArea(client, savedConfig);

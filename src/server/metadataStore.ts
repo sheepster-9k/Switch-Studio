@@ -4,7 +4,7 @@
  *
  * The store is a JSON file keyed by config ID.
  */
-import { readFile, writeFile, mkdir } from "node:fs/promises";
+import { readFile, rename, writeFile, mkdir } from "node:fs/promises";
 import { dirname } from "node:path";
 
 import { isRecord } from "../shared/utils.js";
@@ -14,6 +14,14 @@ type MetadataMap = Record<string, MetadataRecord>;
 
 let cache: MetadataMap | null = null;
 let storePath: string | null = null;
+
+/** Serialize all writes to prevent interleaved read-modify-write. */
+let writeLock: Promise<void> = Promise.resolve();
+function withLock<T>(fn: () => Promise<T>): Promise<T> {
+  const next = writeLock.then(fn, fn);
+  writeLock = next.then(() => {}, () => {});
+  return next;
+}
 
 export function initMetadataStore(path: string): void {
   storePath = path;
@@ -35,42 +43,42 @@ async function loadStore(): Promise<MetadataMap> {
   return cache;
 }
 
+/** Atomic write — write to temp file then rename into place. */
 async function flush(): Promise<void> {
   if (!storePath || !cache) {
     return;
   }
   await mkdir(dirname(storePath), { recursive: true });
-  await writeFile(storePath, JSON.stringify(cache, null, 2), "utf8");
-}
-
-/** Get persisted metadata for a config, or null if none stored. */
-export async function getPersistedMetadata(configId: string): Promise<MetadataRecord | null> {
-  const store = await loadStore();
-  const entry = store[configId];
-  return isRecord(entry) ? entry : null;
+  const tmpPath = storePath + ".tmp";
+  await writeFile(tmpPath, JSON.stringify(cache, null, 2), "utf8");
+  await rename(tmpPath, storePath);
 }
 
 /** Get all persisted metadata keyed by config ID. */
 export async function getAllPersistedMetadata(): Promise<Record<string, MetadataRecord>> {
-  return await loadStore();
+  return { ...(await loadStore()) };
 }
 
 /** Persist metadata for a config. Pass null to remove. */
 export async function setPersistedMetadata(configId: string, metadata: MetadataRecord | null): Promise<void> {
-  const store = await loadStore();
-  if (metadata && Object.keys(metadata).length > 0) {
-    store[configId] = metadata;
-  } else {
-    delete store[configId];
-  }
-  await flush();
+  return withLock(async () => {
+    const store = await loadStore();
+    if (metadata && Object.keys(metadata).length > 0) {
+      store[configId] = metadata;
+    } else {
+      delete store[configId];
+    }
+    await flush();
+  });
 }
 
 /** Remove metadata for a deleted config. */
 export async function removePersistedMetadata(configId: string): Promise<void> {
-  const store = await loadStore();
-  if (configId in store) {
-    delete store[configId];
-    await flush();
-  }
+  return withLock(async () => {
+    const store = await loadStore();
+    if (configId in store) {
+      delete store[configId];
+      await flush();
+    }
+  });
 }
