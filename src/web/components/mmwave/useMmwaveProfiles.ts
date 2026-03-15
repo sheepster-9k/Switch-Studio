@@ -112,7 +112,7 @@ export function useMmwaveProfiles(
     anchor.download =
       `${selectedProfile.name.replace(/[^a-z0-9-_]+/gi, "_").toLowerCase() || "profile"}.json`;
     anchor.click();
-    URL.revokeObjectURL(url);
+    setTimeout(() => URL.revokeObjectURL(url), 10_000);
   }
 
   async function importProfileFile(event: ChangeEvent<HTMLInputElement>) {

@@ -21,6 +21,11 @@ esac
 # Use the Supervisor-injected token by default; allow manual override via ha_token option.
 if [ -z "$HA_TOKEN" ] && [ -n "$SUPERVISOR_TOKEN" ]; then
     HA_TOKEN="$SUPERVISOR_TOKEN"
+    echo "[switch-studio] Using SUPERVISOR_TOKEN (${#SUPERVISOR_TOKEN} chars)"
+elif [ -n "$HA_TOKEN" ]; then
+    echo "[switch-studio] Using manual ha_token from options"
+else
+    echo "[switch-studio] WARNING: No HA token available (SUPERVISOR_TOKEN and ha_token both empty)"
 fi
 
 # Get ingress entry path from Supervisor API

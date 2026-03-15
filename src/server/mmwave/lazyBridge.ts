@@ -40,9 +40,14 @@ export class LazyMmwaveBridge {
     }
     this.activating = this.doActivate();
     try {
-      return await this.activating;
+      const bridge = await this.activating;
+      return bridge;
     } finally {
-      this.activating = null;
+      // Only clear if doActivate set this.bridge; otherwise a concurrent
+      // caller that arrives after this finally would start a duplicate.
+      if (this.bridge) {
+        this.activating = null;
+      }
     }
   }
 

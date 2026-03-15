@@ -154,9 +154,22 @@ export class HomeAssistantClient {
     }
 
     this.connectPromise = new Promise<void>((resolve, reject) => {
-      const socket = new WebSocket(toWsUrl(this.config.haBaseUrl));
+      const wsUrl = toWsUrl(this.config.haBaseUrl);
+      const socket = new WebSocket(wsUrl, {
+        headers: { Authorization: `Bearer ${this.config.haToken}` }
+      });
       this.connectingSocket = socket;
       let authenticated = false;
+
+      const connectTimeout = setTimeout(() => {
+        if (!authenticated) {
+          const error = new Error("Home Assistant WebSocket connection timed out (15s)");
+          cleanup();
+          rejectPending(error);
+          socket.close();
+          reject(error);
+        }
+      }, 15_000);
 
       const rejectPending = (error: Error) => {
         for (const [id, pending] of this.pending.entries()) {
@@ -167,6 +180,7 @@ export class HomeAssistantClient {
       };
 
       const cleanup = () => {
+        clearTimeout(connectTimeout);
         socket.removeAllListeners();
         if (this.connectingSocket === socket) {
           this.connectingSocket = null;
@@ -185,6 +199,7 @@ export class HomeAssistantClient {
             return;
           }
           if (message.type === "auth_ok") {
+            clearTimeout(connectTimeout);
             authenticated = true;
             this.socket = socket;
             this.connectingSocket = null;

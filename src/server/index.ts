@@ -1656,36 +1656,23 @@ function buildExportAutomation(
               press_count: pressCount
             }
           }
-        : {
-            trigger: "event",
-            event_type: blueprint.eventType,
-            ...(blueprint.identifierKey
-              ? { event_data: { [blueprint.identifierKey]: configEntry.identifier } }
-              : {}),
-            ...(blueprint.buttons[buttonIndex]?.conditions?.length
-              ? {
-                  event_data: {
-                    ...(blueprint.identifierKey ? { [blueprint.identifierKey]: configEntry.identifier } : {}),
-                    ...Object.fromEntries(
-                      blueprint.buttons[buttonIndex].conditions?.map((cond) => [cond.key, cond.value]) ?? []
-                    )
-                  }
-                }
-              : {}),
-            ...(blueprint.buttons[buttonIndex]?.actions[actionIndex]?.conditions?.length
-              ? {
-                  event_data: {
-                    ...(blueprint.identifierKey ? { [blueprint.identifierKey]: configEntry.identifier } : {}),
-                    ...Object.fromEntries(
-                      blueprint.buttons[buttonIndex].conditions?.map((cond) => [cond.key, cond.value]) ?? []
-                    ),
-                    ...Object.fromEntries(
-                      blueprint.buttons[buttonIndex].actions[actionIndex]?.conditions?.map((cond) => [cond.key, cond.value]) ?? []
-                    )
-                  }
-                }
-              : {})
-          }
+        : (() => {
+            const eventData: Record<string, unknown> = {};
+            if (blueprint.identifierKey) {
+              eventData[blueprint.identifierKey] = configEntry.identifier;
+            }
+            for (const cond of blueprint.buttons[buttonIndex]?.conditions ?? []) {
+              eventData[cond.key] = cond.value;
+            }
+            for (const cond of blueprint.buttons[buttonIndex]?.actions[actionIndex]?.conditions ?? []) {
+              eventData[cond.key] = cond.value;
+            }
+            return {
+              trigger: "event",
+              event_type: blueprint.eventType,
+              ...(Object.keys(eventData).length > 0 ? { event_data: eventData } : {})
+            };
+          })()
     ],
     conditions: [],
     actions: sequence,
@@ -2468,7 +2455,9 @@ async function main(): Promise<void> {
     // When running behind HA ingress the supervisor sets INGRESS_ENTRY to the
     // path prefix (e.g. /api/hassio_ingress/TOKEN/). Injecting it as <base href>
     // makes all relative asset and API URLs resolve correctly under that prefix.
-    const ingressEntry = process.env.INGRESS_ENTRY?.trim() || "/";
+    const rawIngressEntry = process.env.INGRESS_ENTRY?.trim() || "/";
+    // Sanitize for safe injection into an HTML attribute
+    const ingressEntry = rawIngressEntry.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
     const indexHtml = await readFile(resolve(webRoot, "index.html"), "utf8");
     const indexHtmlWithBase = indexHtml.replace("<head>", `<head><base href="${ingressEntry}">`);
 
@@ -2485,6 +2474,22 @@ async function main(): Promise<void> {
   if (config.mmwave) {
     const lazyMmwave = new LazyMmwaveBridge(config.mmwave);
     await registerMmwaveRoutes(app, lazyMmwave);
+  }
+
+  // Startup token validation via REST — helps diagnose WebSocket auth failures
+  if (config.haToken) {
+    try {
+      const res = await fetch(`${config.haBaseUrl}/api/`, {
+        headers: { Authorization: `Bearer ${config.haToken}` }
+      });
+      if (res.ok) {
+        app.log.info(`HA token validated via REST (${config.haBaseUrl})`);
+      } else {
+        app.log.warn(`HA token rejected by REST API: ${res.status} ${res.statusText}`);
+      }
+    } catch (err) {
+      app.log.warn(`Could not reach HA REST API at ${config.haBaseUrl}: ${err instanceof Error ? err.message : err}`);
+    }
   }
 
   await app.listen({ host: config.host, port: config.port });

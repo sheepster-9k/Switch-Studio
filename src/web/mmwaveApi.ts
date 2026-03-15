@@ -40,35 +40,35 @@ async function requestJson<T>(input: string, init?: RequestInit): Promise<T> {
 }
 
 export function fetchMmwaveStudio(): Promise<StudioSnapshot> {
-  return requestJson<StudioSnapshot>("/api/mmwave/studio");
+  return requestJson<StudioSnapshot>("api/mmwave/studio");
 }
 
 export function fetchMmwaveProfiles(): Promise<StudioProfile[]> {
-  return requestJson<StudioProfile[]>("/api/mmwave/profiles");
+  return requestJson<StudioProfile[]>("api/mmwave/profiles");
 }
 
 export function createMmwaveProfile(payload: UpsertProfileRequest): Promise<StudioProfile> {
-  return requestJson<StudioProfile>("/api/mmwave/profiles", {
+  return requestJson<StudioProfile>("api/mmwave/profiles", {
     method: "POST",
     body: JSON.stringify(payload)
   });
 }
 
 export function updateMmwaveProfile(profileId: string, payload: UpsertProfileRequest): Promise<StudioProfile> {
-  return requestJson<StudioProfile>(`/api/mmwave/profiles/${encodeURIComponent(profileId)}`, {
+  return requestJson<StudioProfile>(`api/mmwave/profiles/${encodeURIComponent(profileId)}`, {
     method: "PUT",
     body: JSON.stringify(payload)
   });
 }
 
 export function deleteMmwaveProfile(profileId: string): Promise<{ ok: true }> {
-  return requestJson<{ ok: true }>(`/api/mmwave/profiles/${encodeURIComponent(profileId)}`, {
+  return requestJson<{ ok: true }>(`api/mmwave/profiles/${encodeURIComponent(profileId)}`, {
     method: "DELETE"
   });
 }
 
 export function importMmwaveProfiles(payload: unknown): Promise<StudioProfile[]> {
-  return requestJson<StudioProfile[]>("/api/mmwave/profiles/import", {
+  return requestJson<StudioProfile[]>("api/mmwave/profiles/import", {
     method: "POST",
     body: JSON.stringify(payload)
   });
@@ -76,39 +76,39 @@ export function importMmwaveProfiles(payload: unknown): Promise<StudioProfile[]>
 
 export function applyMmwaveProfile(profileId: string, deviceName: string): Promise<DeviceSnapshot> {
   return requestJson<DeviceSnapshot>(
-    `/api/mmwave/profiles/${encodeURIComponent(profileId)}/apply/${encodeURIComponent(deviceName)}`,
+    `api/mmwave/profiles/${encodeURIComponent(profileId)}/apply/${encodeURIComponent(deviceName)}`,
     { method: "POST" }
   );
 }
 
 export function mmwaveFindMe(deviceName: string): Promise<DeviceSnapshot> {
-  return requestJson<DeviceSnapshot>(`/api/mmwave/devices/${encodeURIComponent(deviceName)}/actions/find-me`, {
+  return requestJson<DeviceSnapshot>(`api/mmwave/devices/${encodeURIComponent(deviceName)}/actions/find-me`, {
     method: "POST"
   });
 }
 
 export function mmwaveQueryAreas(deviceName: string): Promise<DeviceSnapshot> {
-  return requestJson<DeviceSnapshot>(`/api/mmwave/devices/${encodeURIComponent(deviceName)}/actions/query-areas`, {
+  return requestJson<DeviceSnapshot>(`api/mmwave/devices/${encodeURIComponent(deviceName)}/actions/query-areas`, {
     method: "POST"
   });
 }
 
 export function mmwaveResetDetection(deviceName: string): Promise<DeviceSnapshot> {
   return requestJson<DeviceSnapshot>(
-    `/api/mmwave/devices/${encodeURIComponent(deviceName)}/actions/reset-detection`,
+    `api/mmwave/devices/${encodeURIComponent(deviceName)}/actions/reset-detection`,
     { method: "POST" }
   );
 }
 
 export function mmwaveClearInterference(deviceName: string): Promise<DeviceSnapshot> {
   return requestJson<DeviceSnapshot>(
-    `/api/mmwave/devices/${encodeURIComponent(deviceName)}/actions/clear-interference`,
+    `api/mmwave/devices/${encodeURIComponent(deviceName)}/actions/clear-interference`,
     { method: "POST" }
   );
 }
 
 export function mmwaveClearStay(deviceName: string): Promise<DeviceSnapshot> {
-  return requestJson<DeviceSnapshot>(`/api/mmwave/devices/${encodeURIComponent(deviceName)}/actions/clear-stay`, {
+  return requestJson<DeviceSnapshot>(`api/mmwave/devices/${encodeURIComponent(deviceName)}/actions/clear-stay`, {
     method: "POST"
   });
 }
@@ -120,7 +120,7 @@ export function mmwaveUpdateArea(
   area: AreaRect
 ): Promise<DeviceSnapshot> {
   return requestJson<DeviceSnapshot>(
-    `/api/mmwave/devices/${encodeURIComponent(deviceName)}/areas/${kind}/${slot}`,
+    `api/mmwave/devices/${encodeURIComponent(deviceName)}/areas/${kind}/${slot}`,
     { method: "PUT", body: JSON.stringify({ area }) }
   );
 }
@@ -132,7 +132,7 @@ export function mmwaveUpdateAreaLabel(
   label: string
 ): Promise<DeviceSnapshot> {
   return requestJson<DeviceSnapshot>(
-    `/api/mmwave/devices/${encodeURIComponent(deviceName)}/labels/${kind}/${slot}`,
+    `api/mmwave/devices/${encodeURIComponent(deviceName)}/labels/${kind}/${slot}`,
     { method: "PUT", body: JSON.stringify({ label }) }
   );
 }
@@ -141,7 +141,7 @@ export function mmwaveUpdateSettings(
   deviceName: string,
   patch: UpdateSettingsRequest
 ): Promise<DeviceSnapshot> {
-  return requestJson<DeviceSnapshot>(`/api/mmwave/devices/${encodeURIComponent(deviceName)}/settings`, {
+  return requestJson<DeviceSnapshot>(`api/mmwave/devices/${encodeURIComponent(deviceName)}/settings`, {
     method: "PUT",
     body: JSON.stringify(patch)
   });
@@ -153,7 +153,9 @@ export function connectMmwaveStream(
   onConnectionRestored?: () => void
 ): () => void {
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-  const url = `${protocol}//${window.location.host}/ws/mmwave`;
+  // Resolve against <base href> so the path works under HA ingress
+  const resolvedBase = new URL("ws/mmwave", window.location.href).pathname;
+  const url = `${protocol}//${window.location.host}${resolvedBase}`;
   let socket: WebSocket | null = null;
   let reconnectTimer: number | null = null;
   let reconnectDelayMs = 1000;
