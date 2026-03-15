@@ -573,7 +573,9 @@
 
 .mmwave-workspace .button-row,
 .mmwave-workspace .button-stack {
-  margin-top: 16px;
+  margin-top: 18px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
 }
 
 .mmwave-workspace .button-stack {
@@ -803,9 +805,15 @@
   gap: 6px;
   padding: 14px;
   border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.04);
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.016), transparent),
     color-mix(in srgb, var(--md-sys-color-surface-container-high) 86%, transparent);
+  transition: border-color 180ms ease;
+}
+
+.mmwave-workspace .teach-heat-card:hover {
+  border-color: var(--line);
 }
 
 .mmwave-workspace .teach-heat-card small {
@@ -836,7 +844,8 @@
 .mmwave-workspace .runtime-grid div,
 .mmwave-workspace .teach-summary {
   padding: 12px 14px;
-  border-radius: 22px;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.04);
   background: color-mix(in srgb, var(--md-sys-color-surface-container-high) 86%, transparent);
 }
 
@@ -907,18 +916,52 @@
   margin-top: 16px;
   padding: 12px 14px;
   border-radius: 18px;
+  border: 1px solid rgba(255, 180, 171, 0.18);
   background: color-mix(in srgb, var(--md-sys-color-error-container) 72%, transparent);
   color: var(--md-sys-color-on-error-container);
+  line-height: 1.55;
 }
 
 .mmwave-workspace .loading-state {
   display: grid;
+  gap: 16px;
   place-items: center;
+  min-height: 180px;
   font-size: 1.05rem;
+}
+
+.mmwave-workspace .loading-state::before {
+  animation: mmwave-spin 900ms linear infinite;
+  border: 2.5px solid var(--line);
+  border-radius: 999px;
+  border-top-color: var(--accent-blue);
+  content: "";
+  display: block;
+  height: 1.5rem;
+  width: 1.5rem;
+}
+
+.mmwave-workspace .loading-state.has-error::before {
+  display: none;
 }
 
 .mmwave-workspace .empty-panel {
   max-width: 720px;
+}
+
+.mmwave-workspace .profile-empty {
+  padding: 18px 16px;
+  border-radius: 14px;
+  border: 1px dashed var(--line);
+  color: var(--muted);
+  text-align: center;
+  margin-top: 16px;
+}
+
+@keyframes mmwave-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .mmwave-workspace .side-column,

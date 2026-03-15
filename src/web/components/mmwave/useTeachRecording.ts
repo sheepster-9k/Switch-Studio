@@ -50,7 +50,7 @@ export function useTeachRecording(selectedDevice: DeviceSnapshot | null) {
         area4: current.area4 + increments.area4
       }));
     }
-  }, [recording, selectedDevice?.updatedAt]);
+  }, [recording, selectedDevice?.meta.friendlyName, selectedDevice?.updatedAt]);
 
   return {
     recording,

@@ -10,7 +10,7 @@ import type {
 import { areaNameById, countActiveActions, countTotalActions, resolvedConfigAreaId } from "../helpers";
 
 interface ConfigRailProps {
-  activeWorkspace: "editor" | "virtual" | "teach" | "automations" | "discovery";
+  activeWorkspace: "editor" | "virtual" | "teach" | "automations" | "discovery" | "mmwave";
   authBusy: boolean;
   authStatus: AuthStatusResponse | null;
   blueprintsById: Map<string, SwitchManagerBlueprint>;

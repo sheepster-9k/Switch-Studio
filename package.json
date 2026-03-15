@@ -1,6 +1,6 @@
 {
   "name": "switch-manager-studio",
-  "version": "1.6.0",
+  "version": "2.0.0",
   "description": "Standalone interactive entity UI for Home Assistant Switch Manager",
   "type": "module",
   "private": true,

@@ -48,7 +48,7 @@ export function useMmwaveProfiles(
     if (selectedDeviceName) {
       setProfileName((current) => current || `${selectedDeviceName} tune`);
     }
-  }, [selectedDeviceName, selectedProfileId]);
+  }, [selectedDeviceName, selectedProfileId, selectedProfile?.name, selectedProfile?.notes]);
 
   async function saveProfile(asUpdate: boolean, payload: UpsertProfileRequest) {
     const label = asUpdate ? "update-profile" : "save-profile";

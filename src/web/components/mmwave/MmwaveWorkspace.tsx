@@ -296,6 +296,8 @@ function MmwaveWorkspace() {
       }
     }, (connectionError) => {
       setError(connectionError);
+    }, () => {
+      setError(null);
     });
   }, []);
 
@@ -354,7 +356,7 @@ function MmwaveWorkspace() {
   if (!bridge && devices.length === 0) {
     return (
       <div className="mmwave-workspace">
-        <section className="panel loading-state">
+        <section className={`panel loading-state${error ? " has-error" : ""}`}>
           {error ? (
             <>
               <p className="error-banner">{error}</p>
@@ -1025,20 +1027,24 @@ function MmwaveWorkspace() {
                 New draft
               </button>
             </div>
-            <div className="profile-list">
-              {profiles.map((profile) => (
-                <button
-                  key={profile.id}
-                  className={`profile-chip${profile.id === selectedProfileId ? " selected" : ""}`}
-                  onClick={() => setSelectedProfileId(profile.id)}
-                  type="button"
-                >
-                  <strong>{profile.name}</strong>
-                  <span>{profile.sourceDevice}</span>
-                  <span>Updated {formatTimestamp(profile.updatedAt)}</span>
-                </button>
-              ))}
-            </div>
+            {profiles.length > 0 ? (
+              <div className="profile-list">
+                {profiles.map((profile) => (
+                  <button
+                    key={profile.id}
+                    className={`profile-chip${profile.id === selectedProfileId ? " selected" : ""}`}
+                    onClick={() => setSelectedProfileId(profile.id)}
+                    type="button"
+                  >
+                    <strong>{profile.name}</strong>
+                    <span>{profile.sourceDevice}</span>
+                    <span>Updated {formatTimestamp(profile.updatedAt)}</span>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <p className="profile-empty">No saved profiles yet. Capture the current geometry with "Save new profile".</p>
+            )}
             <div className="field-grid compact">
               <label className="field">
                 <span>Profile name</span>

@@ -1830,6 +1830,19 @@ async function main(): Promise<void> {
   const authAttempts = new Map<string, { count: number; resetAt: number }>();
   const AUTH_RATE_WINDOW_MS = 60_000;
   const AUTH_RATE_MAX = 15;
+  const AUTH_RATE_PRUNE_THRESHOLD = 200;
+
+  function pruneExpiredAuthBuckets(): void {
+    if (authAttempts.size < AUTH_RATE_PRUNE_THRESHOLD) {
+      return;
+    }
+    const now = Date.now();
+    for (const [ip, bucket] of authAttempts) {
+      if (bucket.resetAt <= now) {
+        authAttempts.delete(ip);
+      }
+    }
+  }
 
   app.get("/api/auth/status", async (request, reply) => {
     reply.header("Cache-Control", "no-store");
@@ -1840,6 +1853,7 @@ async function main(): Promise<void> {
     reply.header("Cache-Control", "no-store");
 
     // Rate limit auth attempts per IP
+    pruneExpiredAuthBuckets();
     const clientIp = request.ip;
     const now = Date.now();
     const bucket = authAttempts.get(clientIp);
