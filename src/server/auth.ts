@@ -1,13 +1,17 @@
 import { randomBytes } from "node:crypto";
-import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 
 import type { FastifyReply, FastifyRequest } from "fastify";
 
 import type { StudioConfig } from "./config.js";
 
+function isSecureRequest(request: FastifyRequest): boolean {
+  return request.protocol === "https" || request.headers["x-forwarded-proto"] === "https";
+}
+
 const SESSION_COOKIE = "switch_manager_studio_session";
-const SESSION_TTL_MS = 10 * 365 * 24 * 60 * 60 * 1000; // ~10 years — internal tool, no expiry
+const SESSION_TTL_MS = 90 * 24 * 60 * 60 * 1000; // 90 days
 const MAX_SESSIONS = 24;
 const SESSION_PERSIST_INTERVAL_MS = 60 * 1000;
 
@@ -46,8 +50,11 @@ function parseCookieHeader(value: string | undefined): Record<string, string> {
     }, {});
 }
 
-function serializeCookie(name: string, value: string, expiresImmediately = false): string {
+function serializeCookie(name: string, value: string, expiresImmediately = false, secure = false): string {
   const parts = [`${name}=${encodeURIComponent(value)}`, "Path=/", "HttpOnly", "SameSite=Lax"];
+  if (secure) {
+    parts.push("Secure");
+  }
   if (expiresImmediately) {
     parts.push("Max-Age=0");
     parts.push("Expires=Thu, 01 Jan 1970 00:00:00 GMT");
@@ -76,10 +83,12 @@ export class StudioAuthManager {
       this.markDirty();
     }
     this.persistSessions(true);
-    reply.header("Set-Cookie", serializeCookie(SESSION_COOKIE, "", true));
+    const secure = isSecureRequest(request);
+    reply.header("Set-Cookie", serializeCookie(SESSION_COOKIE, "", true, secure));
   }
 
   createSession(
+    request: FastifyRequest,
     reply: FastifyReply,
     credentials: {
       accessToken: string;
@@ -105,7 +114,7 @@ export class StudioAuthManager {
     this.sessions.set(session.id, session);
     this.markDirty();
     this.persistSessions(true);
-    reply.header("Set-Cookie", serializeCookie(SESSION_COOKIE, session.id));
+    reply.header("Set-Cookie", serializeCookie(SESSION_COOKIE, session.id, false, isSecureRequest(request)));
     return session;
   }
 
@@ -132,7 +141,7 @@ export class StudioAuthManager {
         this.markDirty();
         this.persistSessions();
         if (reply) {
-          reply.header("Set-Cookie", serializeCookie(SESSION_COOKIE, session.id));
+          reply.header("Set-Cookie", serializeCookie(SESSION_COOKIE, session.id, false, isSecureRequest(request)));
         }
         return session;
       }
@@ -248,11 +257,6 @@ export class StudioAuthManager {
 
     writeFileSync(tempPath, JSON.stringify(payload, null, 2), { encoding: "utf8", mode: 0o600 });
     renameSync(tempPath, this.sessionStorePath);
-    try {
-      chmodSync(this.sessionStorePath, 0o600);
-    } catch {
-      // Ignore platforms that do not support chmod semantics here.
-    }
     this.dirty = false;
     this.lastPersistedAt = Date.now();
   }

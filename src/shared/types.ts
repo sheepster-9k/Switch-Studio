@@ -1,3 +1,7 @@
+export function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 export type TargetKind = "entity" | "device" | "area";
 export type JsonMap = Record<string, unknown>;
 export type SequenceStep = JsonMap;

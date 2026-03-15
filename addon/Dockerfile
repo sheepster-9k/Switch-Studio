@@ -19,6 +19,7 @@ COPY --from=build /app/data ./data
 
 COPY addon/run.sh /run.sh
 RUN chmod +x /run.sh
+# Runs as root — required by HA Supervisor for volume mount permissions (/data, /homeassistant).
 
 ENV NODE_ENV=production
 ENV HOST=0.0.0.0

@@ -384,12 +384,17 @@ export async function registerMmwaveRoutes(app: FastifyInstance, lazy: LazyMmwav
     return device;
   });
 
-  const wss = new WebSocketServer({ noServer: true });
+  const MAX_WS_CONNECTIONS = 50;
+  const wss = new WebSocketServer({ noServer: true, maxPayload: 1 * 1024 * 1024 }); // 1 MB
   const server = app.server as HttpServer;
 
   server.on("upgrade", (request: IncomingMessage, socket, head) => {
     const url = new URL(request.url ?? "/", "http://localhost");
     if (url.pathname !== "/ws/mmwave") {
+      return;
+    }
+    if (wss.clients.size >= MAX_WS_CONNECTIONS) {
+      socket.destroy();
       return;
     }
     wss.handleUpgrade(request, socket, head, async (ws: WebSocket) => {

@@ -380,6 +380,15 @@ function profileToSettings(profile: StudioProfile): DeviceProfileSettings {
   };
 }
 
+function enrichRawState(rawState: Record<string, unknown>, runtime: RuntimeState): Record<string, unknown> {
+  return {
+    ...rawState,
+    ...(runtime.targetPoints.length > 0 ? { mmwave_target_info: runtime.targetPoints } : {}),
+    ...(runtime.targetTelemetryAt ? { mmwave_target_info_updated_at: runtime.targetTelemetryAt } : {}),
+    ...(runtime.targetTelemetryRaw ? { mmwave_target_info_raw: runtime.targetTelemetryRaw } : {})
+  };
+}
+
 function buildSnapshot(
   meta: DeviceMeta,
   runtime: RuntimeState | undefined,
@@ -391,15 +400,6 @@ function buildSnapshot(
     runtime?.targetPoints && runtime.targetPoints.length > 0
       ? runtime.targetPoints
       : normalizeTargetPoints(rawState);
-  const rawStateWithTelemetry =
-    includeRawState && runtime
-      ? {
-          ...rawState,
-          ...(runtime.targetPoints.length > 0 ? { mmwave_target_info: runtime.targetPoints } : {}),
-          ...(runtime.targetTelemetryAt ? { mmwave_target_info_updated_at: runtime.targetTelemetryAt } : {}),
-          ...(runtime.targetTelemetryRaw ? { mmwave_target_info_raw: runtime.targetTelemetryRaw } : {})
-        }
-      : rawState;
   const trackingState = targetTrackingStateFor(rawState, runtime, targetPoints.length);
   const trackingNote =
     trackingState === "live"
@@ -447,7 +447,7 @@ function buildSnapshot(
       "Axes are from the switch looking into the room: negative width is left, positive width is right, and depth increases away from the wall.",
       trackingNote
     ],
-    ...(includeRawState ? { rawState: rawStateWithTelemetry } : {})
+    ...(includeRawState && runtime ? { rawState: enrichRawState(rawState, runtime) } : {})
   };
 }
 
@@ -845,12 +845,7 @@ export class MqttStudioBridge {
     if (!runtime) {
       return null;
     }
-    return {
-      ...runtime.rawState,
-      ...(runtime.targetPoints.length > 0 ? { mmwave_target_info: runtime.targetPoints } : {}),
-      ...(runtime.targetTelemetryAt ? { mmwave_target_info_updated_at: runtime.targetTelemetryAt } : {}),
-      ...(runtime.targetTelemetryRaw ? { mmwave_target_info_raw: runtime.targetTelemetryRaw } : {})
-    };
+    return enrichRawState(runtime.rawState, runtime);
   }
 
   attachSocket(socket: SocketLike): void {

@@ -130,6 +130,7 @@ jobs:
             TAGS="${TAGS} --tag ${IMAGE}:latest"
           fi
 
+          # shellcheck disable=SC2086 — word-splitting is intentional for multi-value args
           docker buildx imagetools create \
             ${TAGS} \
             ${SOURCES}

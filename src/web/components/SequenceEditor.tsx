@@ -1,15 +1,16 @@
 import { useDeferredValue, useEffect, useMemo, useState, type ReactNode } from "react";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 
-import type {
-  DeviceSummary,
-  EntitySummary,
-  JsonMap,
-  SequenceStep,
-  StudioSnapshot,
-  SwitchManagerBlueprint,
-  SwitchManagerConfig,
-  TargetKind
+import {
+  errorMessage,
+  type DeviceSummary,
+  type EntitySummary,
+  type JsonMap,
+  type SequenceStep,
+  type StudioSnapshot,
+  type SwitchManagerBlueprint,
+  type SwitchManagerConfig,
+  type TargetKind
 } from "../../shared/types";
 import {
   cloneStep,
@@ -2074,7 +2075,7 @@ function YamlFieldEditor<T>(props: {
               onApply(parsed);
               setError(null);
             } catch (nextError) {
-              setError(nextError instanceof Error ? nextError.message : String(nextError));
+              setError(errorMessage(nextError));
             }
           }}
           type="button"

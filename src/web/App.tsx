@@ -42,16 +42,17 @@ import {
   matchesSearch,
   resolvedConfigAreaId
 } from "./helpers";
-import type {
-  AuthStatusResponse,
-  AutomationSummary,
-  DevicePropertiesResponse,
-  DiscoveryCandidate,
-  HealthResponse,
-  LearningLibraryResponse,
-  SequenceStep,
-  StudioSnapshot,
-  SwitchManagerConfig
+import {
+  errorMessage,
+  type AuthStatusResponse,
+  type AutomationSummary,
+  type DevicePropertiesResponse,
+  type DiscoveryCandidate,
+  type HealthResponse,
+  type LearningLibraryResponse,
+  type SequenceStep,
+  type StudioSnapshot,
+  type SwitchManagerConfig
 } from "../shared/types";
 
 const LazyMmwaveWorkspace = lazy(() => import("./components/mmwave/MmwaveWorkspace"));
@@ -193,10 +194,6 @@ export function App() {
       setConfigSearch("");
       setNotice(null);
     });
-  }
-
-  function errorMessage(error: unknown): string {
-    return error instanceof Error ? error.message : String(error);
   }
 
   function showActionError(error: unknown): void {

@@ -1,6 +1,7 @@
 import { useState } from "react";
 
 import type { DeviceSnapshot } from "../../../shared/mmwaveTypes";
+import { errorMessage } from "../../../shared/types";
 
 export function applyDeviceUpdate(devices: DeviceSnapshot[], updated: DeviceSnapshot): DeviceSnapshot[] {
   const next = devices.filter((device) => device.meta.friendlyName !== updated.meta.friendlyName);
@@ -23,7 +24,7 @@ export function useDeviceAction(
       setDevices((current) => applyDeviceUpdate(current, updated));
       return updated;
     } catch (nextError) {
-      setError(nextError instanceof Error ? nextError.message : String(nextError));
+      setError(errorMessage(nextError));
       return null;
     } finally {
       setBusyAction(null);

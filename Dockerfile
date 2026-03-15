@@ -14,6 +14,8 @@ RUN npm ci --omit=dev
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/data ./data
 
+RUN chown -R node:node /app
+
 ENV HA_CONFIG_PATH=/homeassistant
 ENV NODE_ENV=production
 ENV HOST=0.0.0.0
@@ -21,4 +23,5 @@ ENV PORT=8878
 
 EXPOSE 8878
 
+USER node
 CMD ["node", "dist/server/index.js"]

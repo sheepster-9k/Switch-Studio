@@ -13,6 +13,11 @@ else
     PORT=8878
 fi
 
+# Validate PORT is a safe integer
+case "$PORT" in
+    ''|*[!0-9]*) PORT=8878 ;;
+esac
+
 # Use the Supervisor-injected token by default; allow manual override via ha_token option.
 if [ -z "$HA_TOKEN" ] && [ -n "$SUPERVISOR_TOKEN" ]; then
     HA_TOKEN="$SUPERVISOR_TOKEN"

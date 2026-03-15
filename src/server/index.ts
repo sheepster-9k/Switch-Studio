@@ -8,26 +8,27 @@ import fastifyStatic from "@fastify/static";
 import Fastify from "fastify";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 
-import type {
-  AuthSessionRequest,
-  AutomationSummary,
-  AreaSummary,
-  BlueprintImageStatus,
-  DevicePropertiesResponse,
-  DeviceSummary,
-  DiscoveryCandidate,
-  EntitySummary,
-  LearnedEvent,
-  LearningLibraryResponse,
-  LearningSession,
-  PropertyControlType,
-  PropertyEntity,
-  SaveConfigRequest,
-  SequenceStep,
-  StudioSnapshot,
-  SwitchManagerBlueprint,
-  SwitchManagerButtonLayoutOverride,
-  SwitchManagerConfig
+import {
+  errorMessage,
+  type AuthSessionRequest,
+  type AutomationSummary,
+  type AreaSummary,
+  type BlueprintImageStatus,
+  type DevicePropertiesResponse,
+  type DeviceSummary,
+  type DiscoveryCandidate,
+  type EntitySummary,
+  type LearnedEvent,
+  type LearningLibraryResponse,
+  type LearningSession,
+  type PropertyControlType,
+  type PropertyEntity,
+  type SaveConfigRequest,
+  type SequenceStep,
+  type StudioSnapshot,
+  type SwitchManagerBlueprint,
+  type SwitchManagerButtonLayoutOverride,
+  type SwitchManagerConfig
 } from "../shared/types.js";
 import { loadConfig, type StudioConfig } from "./config.js";
 import { StudioAuthManager } from "./auth.js";
@@ -1814,8 +1815,21 @@ async function main(): Promise<void> {
   let wsClient = persistedSession
     ? new HomeAssistantClient({ ...config, haToken: persistedSession.accessToken, haBaseUrl: persistedSession.haBaseUrl })
     : new HomeAssistantClient(config);
-  const app = Fastify({ logger: true });
+  const MAX_BODY_BYTES = 5 * 1024 * 1024; // 5 MB
+  const app = Fastify({ logger: true, bodyLimit: MAX_BODY_BYTES });
   const webRoot = resolve(__dirname, "../web");
+
+  // Security headers
+  app.addHook("onSend", async (_request, reply) => {
+    void reply.header("X-Content-Type-Options", "nosniff");
+    void reply.header("X-Frame-Options", "DENY");
+    void reply.header("Referrer-Policy", "strict-origin-when-cross-origin");
+  });
+
+  // Simple per-IP rate limiter for auth endpoint
+  const authAttempts = new Map<string, { count: number; resetAt: number }>();
+  const AUTH_RATE_WINDOW_MS = 60_000;
+  const AUTH_RATE_MAX = 15;
 
   app.get("/api/auth/status", async (request, reply) => {
     reply.header("Cache-Control", "no-store");
@@ -1824,6 +1838,21 @@ async function main(): Promise<void> {
 
   app.post("/api/auth/session", async (request, reply) => {
     reply.header("Cache-Control", "no-store");
+
+    // Rate limit auth attempts per IP
+    const clientIp = request.ip;
+    const now = Date.now();
+    const bucket = authAttempts.get(clientIp);
+    if (bucket && bucket.resetAt > now) {
+      bucket.count++;
+      if (bucket.count > AUTH_RATE_MAX) {
+        reply.code(429);
+        return { error: "Too many authentication attempts. Try again later." };
+      }
+    } else {
+      authAttempts.set(clientIp, { count: 1, resetAt: now + AUTH_RATE_WINDOW_MS });
+    }
+
     const body = request.body as { accessToken?: unknown; haBaseUrl?: unknown } | undefined;
     const accessToken = typeof body?.accessToken === "string" ? body.accessToken.trim() : "";
     const haBaseUrl = typeof body?.haBaseUrl === "string" ? body.haBaseUrl.trim() : "";
@@ -1831,7 +1860,7 @@ async function main(): Promise<void> {
       reply.code(400);
       return { error: "accessToken and haBaseUrl are required" };
     }
-    const session = authManager.createSession(reply, { accessToken, haBaseUrl });
+    const session = authManager.createSession(request, reply, { accessToken, haBaseUrl });
     wsClient.close();
     wsClient = new HomeAssistantClient({ ...config, haToken: session.accessToken, haBaseUrl: session.haBaseUrl });
     return {
@@ -1882,7 +1911,7 @@ async function main(): Promise<void> {
         haBaseUrl: wsClient.baseUrl,
         hasToken: true,
         mmwaveConfigured: config.mmwave !== null,
-        error: error instanceof Error ? error.message : String(error)
+        error: errorMessage(error)
       };
     }
   });
@@ -1898,7 +1927,7 @@ async function main(): Promise<void> {
     } catch (error) {
       request.log.error(error);
       reply.code(503);
-      return { error: error instanceof Error ? error.message : String(error) };
+      return { error: errorMessage(error) };
     }
   });
 
@@ -1922,7 +1951,7 @@ async function main(): Promise<void> {
     } catch (error) {
       request.log.error(error);
       reply.code(400);
-      return { error: error instanceof Error ? error.message : String(error) };
+      return { error: errorMessage(error) };
     }
   });
 
@@ -1942,7 +1971,7 @@ async function main(): Promise<void> {
     } catch (error) {
       request.log.error(error);
       reply.code(400);
-      return { error: error instanceof Error ? error.message : String(error) };
+      return { error: errorMessage(error) };
     }
   });
 
@@ -1996,7 +2025,7 @@ async function main(): Promise<void> {
     } catch (error) {
       request.log.error(error);
       reply.code(400);
-      return { error: error instanceof Error ? error.message : String(error) };
+      return { error: errorMessage(error) };
     }
   });
 
@@ -2007,7 +2036,7 @@ async function main(): Promise<void> {
     } catch (error) {
       request.log.error(error);
       reply.code(400);
-      return { error: error instanceof Error ? error.message : String(error) };
+      return { error: errorMessage(error) };
     }
   });
 
@@ -2020,6 +2049,12 @@ async function main(): Promise<void> {
     }
     const imageBase64 = body.imageBase64;
     const sourceFileName = typeof body.sourceFileName === "string" ? body.sourceFileName : null;
+    // Reject oversized payloads before allocating the buffer (~3 MB base64 ≈ ~2.25 MB decoded)
+    const MAX_IMAGE_BASE64_LENGTH = 3 * 1024 * 1024;
+    if (imageBase64.length > MAX_IMAGE_BASE64_LENGTH) {
+      reply.code(400);
+      return { error: "Image is too large (max ~2 MB)" };
+    }
 
     try {
       const buffer = Buffer.from(imageBase64, "base64");
@@ -2039,7 +2074,7 @@ async function main(): Promise<void> {
     } catch (error) {
       request.log.error(error);
       reply.code(400);
-      return { error: error instanceof Error ? error.message : String(error) };
+      return { error: errorMessage(error) };
     }
   });
 
@@ -2052,7 +2087,7 @@ async function main(): Promise<void> {
     } catch (error) {
       request.log.error(error);
       reply.code(400);
-      return { error: error instanceof Error ? error.message : String(error) };
+      return { error: errorMessage(error) };
     }
   });
 
@@ -2084,14 +2119,15 @@ async function main(): Promise<void> {
       });
 
       reply.header("Cache-Control", "no-store");
-      reply.header("Content-Disposition", `attachment; filename="${packageResult.fileName}"`);
+      const safeFileName = packageResult.fileName.replace(/["\n\r]/g, "");
+      reply.header("Content-Disposition", `attachment; filename="${safeFileName}"`);
       reply.header("Content-Length", String(packageResult.content.length));
       reply.header("Content-Type", "application/gzip");
       return packageResult.content;
     } catch (error) {
       request.log.error(error);
       reply.code(400);
-      return { error: error instanceof Error ? error.message : String(error) };
+      return { error: errorMessage(error) };
     }
   });
 
@@ -2118,7 +2154,7 @@ async function main(): Promise<void> {
     } catch (error) {
       request.log.error(error);
       reply.code(400);
-      return { error: error instanceof Error ? error.message : String(error) };
+      return { error: errorMessage(error) };
     }
   });
 
@@ -2153,7 +2189,7 @@ async function main(): Promise<void> {
     } catch (error) {
       request.log.error(error);
       reply.code(400);
-      return { error: error instanceof Error ? error.message : String(error) };
+      return { error: errorMessage(error) };
     }
   });
 
@@ -2173,7 +2209,7 @@ async function main(): Promise<void> {
     } catch (error) {
       request.log.error(error);
       reply.code(400);
-      return { error: error instanceof Error ? error.message : String(error) };
+      return { error: errorMessage(error) };
     }
   });
 
@@ -2193,7 +2229,7 @@ async function main(): Promise<void> {
     } catch (error) {
       request.log.error(error);
       reply.code(400);
-      return { error: error instanceof Error ? error.message : String(error) };
+      return { error: errorMessage(error) };
     }
   });
 
@@ -2210,7 +2246,7 @@ async function main(): Promise<void> {
     } catch (error) {
       request.log.error(error);
       reply.code(400);
-      return { error: error instanceof Error ? error.message : String(error) };
+      return { error: errorMessage(error) };
     }
   });
 
@@ -2253,7 +2289,8 @@ async function main(): Promise<void> {
         return { error: "Device image could not be fetched from Home Assistant" };
       }
 
-      const contentType = response.headers.get("content-type") ?? "image/jpeg";
+      const rawContentType = response.headers.get("content-type") ?? "image/jpeg";
+      const contentType = rawContentType.startsWith("image/") ? rawContentType : "image/jpeg";
       void reply.header("Content-Type", contentType);
       return Buffer.from(await response.arrayBuffer());
     } catch (error) {
@@ -2281,7 +2318,7 @@ async function main(): Promise<void> {
     } catch (error) {
       request.log.error(error);
       reply.code(400);
-      return { error: error instanceof Error ? error.message : String(error) };
+      return { error: errorMessage(error) };
     }
   });
 
@@ -2315,7 +2352,7 @@ async function main(): Promise<void> {
     } catch (error) {
       request.log.error(error);
       reply.code(400);
-      return { error: error instanceof Error ? error.message : String(error) };
+      return { error: errorMessage(error) };
     }
   });
 
@@ -2341,7 +2378,7 @@ async function main(): Promise<void> {
     } catch (error) {
       request.log.error(error);
       reply.code(400);
-      return { error: error instanceof Error ? error.message : String(error) };
+      return { error: errorMessage(error) };
     }
   });
 
@@ -2361,7 +2398,7 @@ async function main(): Promise<void> {
     } catch (error) {
       request.log.error(error);
       reply.code(400);
-      return { error: error instanceof Error ? error.message : String(error) };
+      return { error: errorMessage(error) };
     }
   });
 
@@ -2386,7 +2423,8 @@ async function main(): Promise<void> {
       if (wsClient.hasToken) {
         const response = await wsClient.fetch(`/assets/switch_manager/${encodeURIComponent(params.id)}.png`);
         if (response.ok) {
-          reply.header("Content-Type", response.headers.get("content-type") ?? "image/png");
+          const bpContentType = response.headers.get("content-type") ?? "image/png";
+          reply.header("Content-Type", bpContentType.startsWith("image/") ? bpContentType : "image/png");
           reply.header("Cache-Control", "no-store");
           return Buffer.from(await response.arrayBuffer());
         }

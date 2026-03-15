@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ChangeEvent } from "react";
 
 import type { StudioProfile, UpsertProfileRequest } from "../../../shared/mmwaveTypes";
 import { sortProfiles } from "../../../shared/mmwaveUtils";
+import { errorMessage } from "../../../shared/types";
 import {
   createMmwaveProfile,
   deleteMmwaveProfile,
@@ -34,7 +35,7 @@ export function useMmwaveProfiles(
 
   useEffect(() => {
     reloadProfiles(null).catch((nextError) => {
-      setError(nextError instanceof Error ? nextError.message : String(nextError));
+      setError(errorMessage(nextError));
     });
   }, []);
 
@@ -60,7 +61,7 @@ export function useMmwaveProfiles(
           : await createMmwaveProfile(payload);
       await reloadProfiles(saved.id);
     } catch (nextError) {
-      setError(nextError instanceof Error ? nextError.message : String(nextError));
+      setError(errorMessage(nextError));
     } finally {
       setBusyAction(null);
     }
@@ -84,7 +85,7 @@ export function useMmwaveProfiles(
         setProfileNotes("");
       }
     } catch (nextError) {
-      setError(nextError instanceof Error ? nextError.message : String(nextError));
+      setError(errorMessage(nextError));
     } finally {
       setBusyAction(null);
     }
@@ -129,7 +130,7 @@ export function useMmwaveProfiles(
       setProfiles(imported);
       setSelectedProfileId(imported[0]?.id ?? null);
     } catch (nextError) {
-      setError(nextError instanceof Error ? nextError.message : String(nextError));
+      setError(errorMessage(nextError));
     } finally {
       setBusyAction(null);
     }
