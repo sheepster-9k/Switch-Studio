@@ -1,6 +1,6 @@
 name: Switch Manager Studio
 description: Standalone editor for Home Assistant Switch Manager button configurations
-version: "2.1.1"
+version: "2.1.3"
 slug: switch_manager_studio
 url: https://github.com/sheepster-9k/Switch-Studio
 image: ghcr.io/sheepster-9k/switch-studio

@@ -42,6 +42,13 @@ function normalizeLabels(input?: Partial<Record<AreaKind, Partial<Record<AreaSlo
 
 export class AreaLabelStore {
   private cache: Record<string, DeviceAreaLabels> = {};
+  private writeLock: Promise<void> = Promise.resolve();
+
+  private withLock<T>(fn: () => Promise<T>): Promise<T> {
+    const next = this.writeLock.then(fn, fn);
+    this.writeLock = next.then(() => {}, () => {});
+    return next;
+  }
 
   constructor(private readonly filePath: string) {}
 
@@ -75,11 +82,13 @@ export class AreaLabelStore {
   }
 
   async setLabel(deviceName: string, kind: AreaKind, slot: AreaSlot, label: string): Promise<DeviceAreaLabels> {
-    const current = normalizeLabels(this.cache[deviceName]);
-    current[kind][slot] = sanitizeLabel(label);
-    this.cache[deviceName] = current;
-    await this.write();
-    return current;
+    return this.withLock(async () => {
+      const current = normalizeLabels(this.cache[deviceName]);
+      current[kind][slot] = sanitizeLabel(label);
+      this.cache[deviceName] = current;
+      await this.write();
+      return current;
+    });
   }
 
   private async write(): Promise<void> {

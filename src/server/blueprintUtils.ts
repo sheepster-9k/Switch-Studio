@@ -1,5 +1,5 @@
 import { constants } from "node:fs";
-import { access, mkdir, readFile, unlink, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { gzipSync } from "node:zlib";
 
@@ -248,7 +248,9 @@ export async function saveBlueprintImageOverride(
   }
 
   await mkdir(overrideRoot, { recursive: true });
-  await writeFile(imagePath, imageBuffer);
+  const tmpPath = imagePath + ".tmp";
+  await writeFile(tmpPath, imageBuffer);
+  await rename(tmpPath, imagePath);
 }
 
 export async function removeBlueprintImageOverride(overrideRoot: string, blueprintId: string): Promise<void> {

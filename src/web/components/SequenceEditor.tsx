@@ -478,8 +478,11 @@ export function SequenceListEditor(props: SequenceListEditorProps) {
   }
 
   function duplicateStep(index: number): void {
+    if (index < 0 || index >= sequence.length) {
+      return;
+    }
     const nextSequence = sequence.map((entry) => cloneStep(entry));
-    const duplicate = cloneStep(sequence[index] ?? {});
+    const duplicate = cloneStep(sequence[index]);
     nextSequence.splice(index + 1, 0, duplicate);
     commit(nextSequence, index + 1);
     setEditorOpen(true);
@@ -620,7 +623,7 @@ export function SequenceListEditor(props: SequenceListEditorProps) {
             onMoveUp={() => moveStep(activeIndex, -1)}
             onRemove={() => {
               removeStep(activeIndex);
-              if (sequence.length <= 1) {
+              if (sequence.length <= 2) {
                 setEditorOpen(false);
               }
             }}
@@ -918,6 +921,7 @@ function DelayStepEditor(props: { onChange: (step: SequenceStep) => void; step: 
   }
 
   function updatePart(key: keyof DurationParts, value: number): void {
+    if (!parts) return;
     const next = {
       ...parts,
       [key]: Math.max(0, value)
@@ -1401,11 +1405,9 @@ function ConditionListEditor(props: ConditionListEditorProps) {
               <button
                 className="button button--danger"
                 onClick={() => {
-                  updateConditions(
-                    conditions.filter((_, index) => index !== selectedIndex).map((condition) => cloneStep(condition)),
-                    Math.max(0, selectedIndex - 1)
-                  );
-                  if (conditions.length <= 1) {
+                  const next = conditions.filter((_, index) => index !== selectedIndex).map((condition) => cloneStep(condition));
+                  updateConditions(next, Math.max(0, selectedIndex - 1));
+                  if (next.length === 0) {
                     setEditorOpen(false);
                   }
                 }}
@@ -1803,11 +1805,9 @@ function TriggerListEditor(props: TriggerListEditorProps) {
               <button
                 className="button button--danger"
                 onClick={() => {
-                  updateTriggers(
-                    triggers.filter((_, index) => index !== selectedIndex).map((trigger) => cloneStep(trigger)),
-                    Math.max(0, selectedIndex - 1)
-                  );
-                  if (triggers.length <= 1) {
+                  const next = triggers.filter((_, index) => index !== selectedIndex).map((trigger) => cloneStep(trigger));
+                  updateTriggers(next, Math.max(0, selectedIndex - 1));
+                  if (next.length === 0) {
                     setEditorOpen(false);
                   }
                 }}

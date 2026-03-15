@@ -208,6 +208,7 @@ export class HomeAssistantClient {
           }
           if (message.type === "auth_invalid") {
             const error = new Error("Home Assistant rejected HA_TOKEN");
+            cleanup();
             reject(error);
             socket.close();
             return;
@@ -234,6 +235,8 @@ export class HomeAssistantClient {
           const err = error instanceof Error ? error : new Error(String(error));
           if (!authenticated) {
             reject(err);
+          } else {
+            console.error("HA WebSocket message error:", err.message);
           }
         }
       });

@@ -17,6 +17,9 @@ export function buildTarArchive(entries: BlueprintPackageEntry[]): Buffer {
   const blocks: Buffer[] = [];
 
   for (const entry of entries) {
+    if (Buffer.byteLength(entry.name) > 100) {
+      throw new Error(`Tar entry name exceeds 100 bytes: ${entry.name}`);
+    }
     const header = Buffer.alloc(512, 0);
     writeTarStringField(header, 0, 100, entry.name);
     writeTarOctalField(header, 100, 8, 0o644);

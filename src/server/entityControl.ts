@@ -14,6 +14,9 @@ export async function callEntityControl(
   action: string,
   value?: unknown
 ): Promise<void> {
+  if (!entityId || !entityId.includes(".")) {
+    throw new Error(`Invalid entity ID "${entityId}"`);
+  }
   const domain = entityId.split(".")[0];
   if (!CONTROLLABLE_DOMAINS.has(domain)) {
     throw new Error(`Domain "${domain}" is not allowed for entity control`);
@@ -29,10 +32,16 @@ export async function callEntityControl(
     return;
   }
   if (action === "select_option") {
+    if (typeof value !== "string") {
+      throw new Error("select_option requires a string value");
+    }
     await wsClient.callService(domain, "select_option", { option: value }, target);
     return;
   }
   if (action === "set_value") {
+    if (value === undefined || value === null) {
+      throw new Error("set_value requires a value");
+    }
     await wsClient.callService(domain, "set_value", { value }, target);
     return;
   }

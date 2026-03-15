@@ -1,4 +1,4 @@
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile, rename, writeFile } from "node:fs/promises";
 
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 
@@ -104,10 +104,10 @@ export function normalizeLearnedEvent(raw: Record<string, unknown>): LearnedEven
 
 export function getNestedValue(record: Record<string, unknown>, path: string): unknown {
   return path.split(".").reduce<unknown>((current, key) => {
-    if (!current || typeof current !== "object") {
+    if (!isRecord(current)) {
       return undefined;
     }
-    return (current as Record<string, unknown>)[key];
+    return current[key];
   }, record);
 }
 
@@ -152,7 +152,8 @@ export function normalizeAutomationEntry(
 export function stableAutomationId(raw: Record<string, unknown>): string {
   const alias = asString(raw.alias);
   const description = asString(raw.description);
-  const basis = `${alias}|${description}`.trim() || JSON.stringify(raw);
+  const combined = `${alias}|${description}`;
+  const basis = (alias || description) ? combined : JSON.stringify(raw);
   return `automation-${basis.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 80) || "generated"}`;
 }
 
@@ -218,7 +219,7 @@ export function inferAutomationMatch(
         const rawButtonConditions = button.conditions ?? [];
         const buttonMatches = rawButtonConditions.length === 0 ||
           rawButtonConditions.every((condition) => String(getNestedValue(eventData, condition.key)) === condition.value);
-        if (!buttonMatches && rawButtonConditions.length > 0) {
+        if (!buttonMatches) {
           continue;
         }
 
@@ -274,7 +275,15 @@ export async function loadAutomations(
     throw new Error("HA_CONFIG_PATH is not configured");
   }
 
-  const content = await readFile(filePath, "utf8");
+  let content: string;
+  try {
+    content = await readFile(filePath, "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      return [];
+    }
+    throw error;
+  }
   const parsed = parseYaml(content) as unknown;
   const entries = Array.isArray(parsed) ? parsed : [];
   return entries
@@ -668,11 +677,16 @@ export async function exportAutomation(
       if (Array.isArray(parsed)) {
         existing = parsed;
       }
-    } catch {
-      // File missing or unparseable — start fresh
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+        throw error;
+      }
+      // File missing — start fresh
     }
     existing.push(exported);
-    await writeFile(filePath, stringifyYaml(existing), "utf8");
+    const tmpPath = filePath + ".tmp";
+    await writeFile(tmpPath, stringifyYaml(existing), "utf8");
+    await rename(tmpPath, filePath);
   });
   await wsClient.callService("automation", "reload");
 

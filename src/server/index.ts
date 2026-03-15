@@ -24,6 +24,7 @@ import { normalizeConfigForSave, normalizeConfigFromStore } from "./normalizatio
 import {
   fileExists,
   isPngBuffer,
+  sanitizeBlueprintId,
   saveBlueprintImageOverride,
   removeBlueprintImageOverride,
   loadBlueprintImageStatus,
@@ -145,6 +146,10 @@ async function main(): Promise<void> {
       reply.code(400);
       return { error: "accessToken and haBaseUrl are required" };
     }
+    if (!/^https?:\/\//i.test(haBaseUrl)) {
+      reply.code(400);
+      return { error: "haBaseUrl must start with http:// or https://" };
+    }
     const session = authManager.createSession(request, reply, { accessToken, haBaseUrl });
     wsClient.close();
     wsClient = new HomeAssistantClient({ ...config, haToken: session.accessToken, haBaseUrl: session.haBaseUrl });
@@ -157,6 +162,11 @@ async function main(): Promise<void> {
 
   app.delete("/api/auth/session", async (request, reply) => {
     reply.header("Cache-Control", "no-store");
+    // Only allow sign-out if the caller actually has a session (prevents unauthenticated DoS).
+    if (!config.haToken && !authManager.getSession(request)) {
+      reply.code(401);
+      return { error: "No active session" };
+    }
     authManager.clearSession(request, reply);
     wsClient.close();
     wsClient = new HomeAssistantClient(config);
@@ -269,11 +279,11 @@ async function main(): Promise<void> {
     };
     if (
       typeof body?.configId !== "string" ||
-      typeof body?.buttonIndex !== "number" ||
-      typeof body?.actionIndex !== "number"
+      typeof body?.buttonIndex !== "number" || !Number.isInteger(body.buttonIndex) || body.buttonIndex < 0 ||
+      typeof body?.actionIndex !== "number" || !Number.isInteger(body.actionIndex) || body.actionIndex < 0
     ) {
       reply.code(400);
-      return { error: "configId, buttonIndex, and actionIndex are required" };
+      return { error: "configId, buttonIndex (non-negative integer), and actionIndex (non-negative integer) are required" };
     }
     try {
       const snapshot = await buildSnapshotWithWebsocket(client);
@@ -296,6 +306,10 @@ async function main(): Promise<void> {
 
   app.get("/api/blueprints/:id/image-status", async (request, reply) => {
     const params = request.params as { id: string };
+    if (!sanitizeBlueprintId(params.id)) {
+      reply.code(400);
+      return { error: "Invalid blueprint ID" };
+    }
     const client = wsClient; // capture reference
     try {
       return await loadBlueprintImageStatus(params.id, config, client);
@@ -308,6 +322,10 @@ async function main(): Promise<void> {
 
   app.post("/api/blueprints/:id/image-override", async (request, reply) => {
     const params = request.params as { id: string };
+    if (!sanitizeBlueprintId(params.id)) {
+      reply.code(400);
+      return { error: "Invalid blueprint ID" };
+    }
     const body = request.body as { imageBase64?: unknown; sourceFileName?: unknown } | undefined;
     if (typeof body?.imageBase64 !== "string" || !body.imageBase64.trim()) {
       reply.code(400);
@@ -347,6 +365,10 @@ async function main(): Promise<void> {
 
   app.delete("/api/blueprints/:id/image-override", async (request, reply) => {
     const params = request.params as { id: string };
+    if (!sanitizeBlueprintId(params.id)) {
+      reply.code(400);
+      return { error: "Invalid blueprint ID" };
+    }
 
     try {
       await removeBlueprintImageOverride(config.blueprintImageOverrideDir, params.id);
@@ -673,6 +695,10 @@ async function main(): Promise<void> {
 
   app.get("/api/blueprints/:id/image", async (request, reply) => {
     const params = request.params as { id: string };
+    if (!sanitizeBlueprintId(params.id)) {
+      reply.code(400);
+      return { error: "Invalid blueprint ID" };
+    }
 
     try {
       const overrideImage = await serveLocalBlueprintImage(config.blueprintImageOverrideDir, params.id);
@@ -756,4 +782,7 @@ async function main(): Promise<void> {
   await app.listen({ host: config.host, port: config.port });
 }
 
-void main();
+main().catch((err) => {
+  console.error("Fatal startup error:", err);
+  process.exit(1);
+});

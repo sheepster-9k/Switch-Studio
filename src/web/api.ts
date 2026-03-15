@@ -89,7 +89,7 @@ async function parseError(response: Response): Promise<ApiError> {
 
 function downloadNameFromDisposition(value: string | null, fallback: string): string {
   const match = value?.match(/filename="?([^";]+)"?/i);
-  return match?.[1] ?? fallback;
+  return match?.[1]?.trim() || fallback;
 }
 
 export async function fetchHealth(): Promise<HealthResponse> {
@@ -267,6 +267,9 @@ export async function deleteBlueprintImageOverride(blueprintId: string): Promise
 export async function fetchDeviceImage(deviceId: string): Promise<Blob> {
   const response = await fetch(`api/devices/${encodeURIComponent(deviceId)}/image`);
   if (!response.ok) {
+    if (response.status === 401) {
+      notifyAuthExpired();
+    }
     const body = await response.json().catch(() => ({})) as { error?: string };
     throw new Error(body.error ?? "Device image not available");
   }

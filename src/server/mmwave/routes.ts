@@ -390,7 +390,7 @@ export async function registerMmwaveRoutes(app: FastifyInstance, lazy: LazyMmwav
 
   server.on("upgrade", (request: IncomingMessage, socket, head) => {
     const url = new URL(request.url ?? "/", "http://localhost");
-    if (url.pathname !== "/ws/mmwave") {
+    if (!url.pathname.endsWith("/ws/mmwave")) {
       return;
     }
     if (wss.clients.size >= MAX_WS_CONNECTIONS) {

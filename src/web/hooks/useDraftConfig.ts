@@ -135,15 +135,19 @@ export function useDraftConfig(deps: {
   }
 
   function updateDraft(mutator: (config: SwitchManagerConfig) => void): void {
+    let updated = false;
     setDraft((current) => {
       if (!current) {
         return current;
       }
+      updated = true;
       const next = cloneConfig(current);
       mutator(next);
       return next;
     });
-    setDirtyFlag(true);
+    if (updated) {
+      setDirtyFlag(true);
+    }
   }
 
   function updateSelectedStep(mutator: (step: SequenceStep) => SequenceStep): void {

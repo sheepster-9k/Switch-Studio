@@ -47,7 +47,8 @@ export function rangeSpan(min: number, max: number): number {
 }
 
 export function areaDisplayLabel(labels: DeviceAreaLabels, kind: AreaKind, slot: AreaSlot): string {
-  return labels[kind][slot].trim() || slot;
+  const raw = labels[kind]?.[slot];
+  return raw?.trim() || slot;
 }
 
 export function sortProfiles(profiles: StudioProfile[]): StudioProfile[] {

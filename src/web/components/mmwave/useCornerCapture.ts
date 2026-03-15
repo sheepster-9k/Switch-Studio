@@ -21,13 +21,18 @@ function rectFromCornerSamples(
   if (points.length < 2) {
     return null;
   }
-  const xs = points.map((point) => point.x);
-  const ys = points.map((point) => point.y);
+  let xMin = Infinity, xMax = -Infinity, yMin = Infinity, yMax = -Infinity;
+  for (const p of points) {
+    if (p.x < xMin) xMin = p.x;
+    if (p.x > xMax) xMax = p.x;
+    if (p.y < yMin) yMin = p.y;
+    if (p.y > yMax) yMax = p.y;
+  }
   return {
-    width_min: clamp(Math.min(...xs), bounds.width_min, bounds.width_max),
-    width_max: clamp(Math.max(...xs), bounds.width_min, bounds.width_max),
-    depth_min: clamp(Math.min(...ys), bounds.depth_min, bounds.depth_max),
-    depth_max: clamp(Math.max(...ys), bounds.depth_min, bounds.depth_max),
+    width_min: clamp(xMin, bounds.width_min, bounds.width_max),
+    width_max: clamp(xMax, bounds.width_min, bounds.width_max),
+    depth_min: clamp(yMin, bounds.depth_min, bounds.depth_max),
+    depth_max: clamp(yMax, bounds.depth_min, bounds.depth_max),
     height_min: fallbackRect.height_min,
     height_max: fallbackRect.height_max
   };

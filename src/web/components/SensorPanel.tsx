@@ -79,6 +79,7 @@ export function SensorPanel(props: SensorPanelProps) {
 
   useEffect(() => {
     setImageRevision(0);
+    setImageError(null);
   }, [selectedBlueprint.id]);
 
   const imageAvailable = Boolean(imageStatus?.hasImage);

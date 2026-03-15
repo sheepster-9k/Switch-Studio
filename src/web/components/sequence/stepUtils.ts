@@ -55,12 +55,12 @@ export interface DurationParts {
   seconds: number;
 }
 
-export const ZERO_DURATION: DurationParts = {
+export const ZERO_DURATION: Readonly<DurationParts> = Object.freeze({
   hours: 0,
   milliseconds: 0,
   minutes: 0,
   seconds: 0
-};
+});
 
 // ── Classifiers ──
 
@@ -371,7 +371,7 @@ export function parseDuration(value: unknown): DurationParts | null {
     const hasHours = match[1] !== undefined;
     return {
       hours: hasHours ? Number.parseInt(match[1] ?? "0", 10) : 0,
-      milliseconds: Number.parseInt(match[4] ?? "0", 10),
+      milliseconds: Number.parseInt((match[4] ?? "0").padEnd(3, "0"), 10),
       minutes: Number.parseInt(match[2], 10),
       seconds: Number.parseInt(match[3], 10)
     };

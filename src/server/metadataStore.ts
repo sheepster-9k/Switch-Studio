@@ -7,7 +7,7 @@
 import { readFile, rename, writeFile, mkdir } from "node:fs/promises";
 import { dirname } from "node:path";
 
-import { isRecord } from "../shared/utils.js";
+import { isRecord, cloneValue } from "../shared/utils.js";
 
 export type MetadataRecord = Record<string, unknown>;
 type MetadataMap = Record<string, MetadataRecord>;
@@ -56,7 +56,7 @@ async function flush(): Promise<void> {
 
 /** Get all persisted metadata keyed by config ID. */
 export async function getAllPersistedMetadata(): Promise<Record<string, MetadataRecord>> {
-  return { ...(await loadStore()) };
+  return cloneValue(await loadStore());
 }
 
 /** Persist metadata for a config. Pass null to remove. */

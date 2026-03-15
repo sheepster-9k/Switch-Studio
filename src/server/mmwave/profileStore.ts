@@ -98,6 +98,14 @@ function importCandidates(payload: unknown): unknown[] {
 }
 
 export class FileProfileStore {
+  private writeLock: Promise<void> = Promise.resolve();
+
+  private withLock<T>(fn: () => Promise<T>): Promise<T> {
+    const next = this.writeLock.then(fn, fn);
+    this.writeLock = next.then(() => {}, () => {});
+    return next;
+  }
+
   constructor(private readonly filePath: string) {}
 
   private async readStore(): Promise<ProfileFile> {
@@ -144,79 +152,87 @@ export class FileProfileStore {
   }
 
   async create(input: UpsertProfileRequest): Promise<StudioProfile> {
-    const store = await this.readStore();
-    const profile = normalizeProfile({
-      name: input.name,
-      notes: input.notes,
-      model: input.model,
-      sourceDevice: input.sourceDevice,
-      settings: input.settings,
-      areas: input.areas
+    return this.withLock(async () => {
+      const store = await this.readStore();
+      const profile = normalizeProfile({
+        name: input.name,
+        notes: input.notes,
+        model: input.model,
+        sourceDevice: input.sourceDevice,
+        settings: input.settings,
+        areas: input.areas
+      });
+      store.profiles = [profile, ...store.profiles.filter((entry) => entry.id !== profile.id)];
+      await this.writeStore(store);
+      return profile;
     });
-    store.profiles = [profile, ...store.profiles.filter((entry) => entry.id !== profile.id)];
-    await this.writeStore(store);
-    return profile;
   }
 
   async update(id: string, input: UpsertProfileRequest): Promise<StudioProfile | null> {
-    const store = await this.readStore();
-    const current = store.profiles.find((profile) => profile.id === id);
-    if (!current) {
-      return null;
-    }
-    const updated = normalizeProfile({
-      ...current,
-      id,
-      name: input.name,
-      notes: input.notes,
-      model: input.model ?? current.model,
-      sourceDevice: input.sourceDevice,
-      settings: input.settings,
-      areas: input.areas,
-      createdAt: current.createdAt,
-      updatedAt: new Date().toISOString()
+    return this.withLock(async () => {
+      const store = await this.readStore();
+      const current = store.profiles.find((profile) => profile.id === id);
+      if (!current) {
+        return null;
+      }
+      const updated = normalizeProfile({
+        ...current,
+        id,
+        name: input.name,
+        notes: input.notes,
+        model: input.model ?? current.model,
+        sourceDevice: input.sourceDevice,
+        settings: input.settings,
+        areas: input.areas,
+        createdAt: current.createdAt,
+        updatedAt: new Date().toISOString()
+      });
+      store.profiles = [updated, ...store.profiles.filter((profile) => profile.id !== id)];
+      await this.writeStore(store);
+      return updated;
     });
-    store.profiles = [updated, ...store.profiles.filter((profile) => profile.id !== id)];
-    await this.writeStore(store);
-    return updated;
   }
 
   async delete(id: string): Promise<boolean> {
-    const store = await this.readStore();
-    const next = store.profiles.filter((profile) => profile.id !== id);
-    if (next.length === store.profiles.length) {
-      return false;
-    }
-    store.profiles = next;
-    await this.writeStore(store);
-    return true;
+    return this.withLock(async () => {
+      const store = await this.readStore();
+      const next = store.profiles.filter((profile) => profile.id !== id);
+      if (next.length === store.profiles.length) {
+        return false;
+      }
+      store.profiles = next;
+      await this.writeStore(store);
+      return true;
+    });
   }
 
   async import(payload: unknown): Promise<StudioProfile[]> {
-    const incoming = importCandidates(payload);
-    const store = await this.readStore();
-    const byId = new Map(store.profiles.map((profile) => [profile.id, profile]));
+    return this.withLock(async () => {
+      const incoming = importCandidates(payload);
+      const store = await this.readStore();
+      const byId = new Map(store.profiles.map((profile) => [profile.id, profile]));
 
-    for (const candidate of incoming) {
-      if (!candidate || typeof candidate !== "object") {
-        continue;
+      for (const candidate of incoming) {
+        if (!candidate || typeof candidate !== "object") {
+          continue;
+        }
+        const record = candidate as Partial<StudioProfile>;
+        if (!record.name || !record.sourceDevice) {
+          continue;
+        }
+        const profile = normalizeProfile({
+          ...record,
+          updatedAt: new Date().toISOString(),
+          createdAt: typeof record.createdAt === "string" && record.createdAt ? record.createdAt : undefined,
+          name: String(record.name),
+          sourceDevice: String(record.sourceDevice)
+        });
+        byId.set(profile.id, profile);
       }
-      const record = candidate as Partial<StudioProfile>;
-      if (!record.name || !record.sourceDevice) {
-        continue;
-      }
-      const profile = normalizeProfile({
-        ...record,
-        updatedAt: new Date().toISOString(),
-        createdAt: typeof record.createdAt === "string" && record.createdAt ? record.createdAt : undefined,
-        name: String(record.name),
-        sourceDevice: String(record.sourceDevice)
-      });
-      byId.set(profile.id, profile);
-    }
 
-    store.profiles = sortProfiles(Array.from(byId.values()));
-    await this.writeStore(store);
-    return store.profiles;
+      store.profiles = sortProfiles(Array.from(byId.values()));
+      await this.writeStore(store);
+      return store.profiles;
+    });
   }
 }

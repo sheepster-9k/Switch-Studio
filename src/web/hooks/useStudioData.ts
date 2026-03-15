@@ -71,9 +71,10 @@ export function useStudioData(deps: {
     if (!learning?.activeSession?.active) {
       return;
     }
+    let cancelled = false;
     let polling = false;
     const timer = window.setInterval(() => {
-      if (polling) {
+      if (cancelled || polling) {
         return;
       }
       polling = true;
@@ -81,7 +82,10 @@ export function useStudioData(deps: {
         polling = false;
       });
     }, 3000);
-    return () => window.clearInterval(timer);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
   }, [learning?.activeSession?.active]);
 
   async function loadStudio(

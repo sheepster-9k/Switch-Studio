@@ -135,6 +135,9 @@ export function useConfigPersistence(deps: {
     }
     try {
       await deleteConfig(draft.id);
+      setDraft(null);
+      setSelectedConfigId("");
+      resetDraftSelections();
       const reloaded = await loadStudio(undefined, { blocking: false });
       setNotice({
         kind: reloaded ? "success" : "error",

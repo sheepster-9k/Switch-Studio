@@ -218,7 +218,8 @@ function normalizeTelemetryTargets(payload: unknown): TargetPoint[] {
     ];
   }
 
-  const count = isFiniteNumber(record.target_count)
+  const MAX_TARGET_COUNT = 64;
+  const rawCount = isFiniteNumber(record.target_count)
     ? record.target_count
     : isFiniteNumber(record.target_num)
       ? record.target_num
@@ -227,6 +228,7 @@ function normalizeTelemetryTargets(payload: unknown): TargetPoint[] {
         : isFiniteNumber(record.count)
           ? record.count
           : 0;
+  const count = clamp(Math.trunc(rawCount), 0, MAX_TARGET_COUNT);
 
   const targets: TargetPoint[] = [];
   for (let index = 1; index <= count; index += 1) {
@@ -760,6 +762,7 @@ export class MqttStudioBridge {
       this.scheduleRuntimeCacheWrite();
       this.emitDevice(name);
     }, TARGET_POINT_TTL_MS);
+    timer.unref();
     this.targetExpiryTimers.set(name, timer);
   }
 
@@ -789,10 +792,12 @@ export class MqttStudioBridge {
     if (this.cacheWriteTimer) {
       return;
     }
-    this.cacheWriteTimer = setTimeout(() => {
+    const timer = setTimeout(() => {
       this.cacheWriteTimer = null;
       void this.writeRuntimeCache();
     }, 2000);
+    timer.unref();
+    this.cacheWriteTimer = timer;
   }
 
   private async writeRuntimeCache(): Promise<void> {
@@ -870,19 +875,27 @@ export class MqttStudioBridge {
 
   private broadcast(payload: unknown): void {
     const message = JSON.stringify(payload);
+    const failed: SocketLike[] = [];
     for (const socket of this.sockets) {
       if (socket.readyState !== undefined && socket.readyState !== 1) {
+        failed.push(socket);
         continue;
       }
       try {
         socket.send(message);
       } catch {
-        this.sockets.delete(socket);
+        failed.push(socket);
       }
+    }
+    for (const socket of failed) {
+      this.sockets.delete(socket);
     }
   }
 
   private publishDevice(name: string, payload: Record<string, unknown>): void {
+    if (!this.metas.has(name)) {
+      return;
+    }
     this.client.publish(`${this.config.baseTopic}/${name}/set`, JSON.stringify(payload));
   }
 

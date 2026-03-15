@@ -2,7 +2,7 @@ import {
   type SwitchManagerBlueprint,
   type SwitchManagerConfig
 } from "../shared/types.js";
-import { isRecord, asString, asNullableString } from "../shared/utils.js";
+import { isRecord, asString, asNullableString, cloneValue } from "../shared/utils.js";
 
 export interface RegistryEntityLink {
   entityId: string;
@@ -256,7 +256,7 @@ export function hydrateConfigLinks(
     );
 
     let metadata = isRecord(configEntry.metadata)
-      ? ({ ...configEntry.metadata } as SwitchManagerConfig["metadata"])
+      ? (cloneValue(configEntry.metadata) as SwitchManagerConfig["metadata"])
       : configEntry.metadata;
     if (isRecord(metadata) && metadata.areaManaged === true) {
       metadata = {

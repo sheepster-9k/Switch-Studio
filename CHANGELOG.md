@@ -2,6 +2,61 @@
 
 All notable changes to Switch Manager Studio are documented here.
 
+## [2.1.3] - 2026-03-15
+
+### Fixed
+- **SSRF prevention**: auth session endpoint now rejects `haBaseUrl` values that don't start with `http://` or `https://`
+- **Path traversal prevention**: blueprint `:id` route parameters are validated with the existing `sanitizeBlueprintId` allowlist
+- **Auth DoS prevention**: `DELETE /api/auth/session` now requires an active session before allowing sign-out
+- HA WebSocket `auth_invalid` handler now calls `cleanup()` to clear stale `connectPromise` state
+- mmWave lazy bridge no longer permanently bricks after activation failure (`this.activating` cleared unconditionally)
+- mmWave MQTT telemetry `target_count` is clamped to 0–64 to prevent unbounded loops from untrusted payloads
+- mmWave broadcast no longer mutates the socket Set during iteration (collects failed sockets, then removes)
+- Tar archive builder throws on filenames exceeding the 100-byte POSIX limit instead of silently truncating
+- Config sort in snapshot builder falls back to `localeCompare` when config IDs are non-numeric (prevents NaN comparisons)
+- `stableAutomationId` now correctly falls through to `JSON.stringify` for automations with neither alias nor description
+- `loadAutomations` gracefully returns an empty array when `automations.yaml` does not exist (ENOENT)
+- Redundant condition guard removed in `inferAutomationMatch` (the `!buttonMatches` check was always sufficient)
+- `callEntityControl` validates that `select_option` receives a string and `set_value` receives a defined value
+- Metadata store deep-clones via `cloneValue` (prefers `structuredClone`) instead of `JSON.parse(JSON.stringify())`
+- mmWave WebSocket upgrade path uses `endsWith("/ws/mmwave")` so it works under HA ingress proxy prefixes
+- `areaDisplayLabel` guards against undefined `labels[kind]` or `labels[kind][slot]`
+- `fetchDeviceImage` API client now fires `AUTH_EXPIRED` event on 401 responses
+- `ZERO_DURATION` is now frozen to prevent accidental mutation via `parseDuration` return
+- Duration string millisecond parsing pads fractional digits to 3 (`"0:05:30.5"` → 500ms, not 5ms)
+- Sequence/condition/trigger remove handlers use post-filter length instead of stale pre-removal length
+- `DelayStepEditor.updatePart` guards against null `parts` to prevent stale-closure crash
+- Blueprint grid loops guard against zero `cellWidth`/`cellHeight` to prevent infinite loops
+- `SensorPanel` clears `imageError` when the selected blueprint changes
+- `fallbackPathBounds` and `blueprintViewBox` use loop-based min/max instead of `Math.min(...spread)` to avoid stack overflow on large SVGs
+- `useCornerCapture` rect calculation uses loop-based min/max instead of spread
+- `useDraftConfig.updateDraft` only marks dirty when the draft is non-null
+
+## [2.1.2] - 2026-03-15
+
+### Fixed
+- Automation export now throws on corrupt `automations.yaml` instead of silently discarding existing entries; writes are atomic (temp file + rename)
+- Profile store operations (create, update, delete, import) are now serialized with a write mutex to prevent interleaved read-modify-write corruption
+- Area label store writes are now serialized with a write mutex
+- Blueprint image override writes are now atomic (temp file + rename)
+- mmWave target expiry, cache write, and idle shutdown timers now call `.unref()` so they don't prevent clean process exit
+- MQTT `publishDevice` now guards against publishing to unknown devices
+- Fatal startup errors are now caught and logged instead of producing an unhandled rejection
+- Entity control validates entity ID format before domain extraction
+- Automation export validates `buttonIndex`/`actionIndex` are non-negative integers
+- `getNestedValue` uses `isRecord` guard instead of raw object cast
+- Config normalization filters non-string entries from `propertyEntityIds`
+- Metadata deep-cloned in `hydrateConfigLinks` to prevent mutation of source configs
+- Config port and request timeout fall back to defaults on invalid env var values
+- HA WebSocket message parsing errors after authentication are now logged instead of silently swallowed
+- mmWave idle deactivation catches errors instead of producing unhandled rejection
+- Learning session poll adds cancellation token to prevent state updates after cleanup
+- `SequenceEditor.duplicateStep` guards against out-of-bounds index
+- `downloadNameFromDisposition` falls back correctly on empty filename captures
+- `ConfigRail` device/entity Maps are now memoized with `useMemo` instead of recreated every render
+- `AUTH_EXPIRED` event handler uses refs to avoid stale closure over `resetStudioState`/`setLoading`/`setBlockingError`
+- Config deletion now clears the draft immediately instead of waiting for the studio reload
+
 ## [2.1.1] - 2026-03-15
 
 ### Fixed

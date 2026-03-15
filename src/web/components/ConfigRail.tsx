@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import type {
   AuthStatusResponse,
@@ -43,8 +43,8 @@ export function ConfigRail(props: ConfigRailProps) {
     selectedConfigId,
     snapshot
   } = props;
-  const devicesById = new Map(snapshot?.devices.map((device) => [device.id, device]) ?? []);
-  const entitiesById = new Map(snapshot?.entities.map((entity) => [entity.entityId, entity]) ?? []);
+  const devicesById = useMemo(() => new Map(snapshot?.devices.map((device) => [device.id, device]) ?? []), [snapshot]);
+  const entitiesById = useMemo(() => new Map(snapshot?.entities.map((entity) => [entity.entityId, entity]) ?? []), [snapshot]);
   const groupedConfigs = configs
     .reduce<Array<{ id: string | null; key: string; name: string; configs: SwitchManagerConfig[] }>>(
       (groups, config) => {

@@ -353,7 +353,7 @@ export function BlueprintPanel(props: BlueprintPanelProps) {
 
   const verticalLines: number[] = [];
   const horizontalLines: number[] = [];
-  if (grid.enabled) {
+  if (grid.enabled && grid.cellWidth > 0 && grid.cellHeight > 0) {
     let x = grid.offsetX;
     while (x > viewMinX) {
       x -= grid.cellWidth;

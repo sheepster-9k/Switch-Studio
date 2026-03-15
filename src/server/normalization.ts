@@ -75,7 +75,7 @@ export function normalizeConfig(raw: Record<string, unknown>): SwitchManagerConf
     variables: isRecord(raw.variables) ? raw.variables : null,
     deviceId: asNullableString(raw.device_id),
     primaryEntityId: asNullableString(raw.primary_entity_id),
-    propertyEntityIds: asArray<string>(raw.property_entity_ids),
+    propertyEntityIds: asArray<string>(raw.property_entity_ids).filter((id) => typeof id === "string" && id),
     metadata: isRecord(raw.metadata) ? raw.metadata : null,
     virtualMultiPress: {
       enabled: asBoolean(isRecord(raw.virtual_multi_press) ? raw.virtual_multi_press.enabled : undefined),

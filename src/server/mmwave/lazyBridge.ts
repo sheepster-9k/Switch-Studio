@@ -43,11 +43,7 @@ export class LazyMmwaveBridge {
       const bridge = await this.activating;
       return bridge;
     } finally {
-      // Only clear if doActivate set this.bridge; otherwise a concurrent
-      // caller that arrives after this finally would start a duplicate.
-      if (this.bridge) {
-        this.activating = null;
-      }
+      this.activating = null;
     }
   }
 
@@ -85,12 +81,16 @@ export class LazyMmwaveBridge {
     if (this.bridge.socketCount > 0) {
       return;
     }
-    this.idleTimer = setTimeout(() => {
+    const timer = setTimeout(() => {
       this.idleTimer = null;
       if (this.bridge && this.bridge.socketCount === 0) {
-        void this.deactivate();
+        this.deactivate().catch((err) => {
+          console.warn("mmWave idle deactivation failed:", err);
+        });
       }
     }, IDLE_SHUTDOWN_MS);
+    timer.unref();
+    this.idleTimer = timer;
   }
 
   private clearIdleTimer(): void {

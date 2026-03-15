@@ -61,11 +61,11 @@ export function loadConfig(): StudioConfig {
     authSessionStorePath: resolveDataPath(process.env.SWITCH_MANAGER_AUTH_SESSION_STORE ?? "data/auth-sessions.json"),
     metadataStorePath: resolveDataPath(process.env.SWITCH_MANAGER_METADATA_STORE ?? "data/config-metadata.json"),
     host: process.env.HOST ?? "0.0.0.0",
-    port: Number(process.env.PORT ?? "8878"),
+    port: Number(process.env.PORT ?? "8878") || 8878,
     haBaseUrl,
     haToken: process.env.HA_TOKEN?.trim() || null,
     haConfigPath,
-    requestTimeoutMs: Number(process.env.HA_REQUEST_TIMEOUT_MS ?? "10000"),
+    requestTimeoutMs: Number(process.env.HA_REQUEST_TIMEOUT_MS ?? "10000") || 10000,
     blueprintImageDir: resolveDataPath(process.env.SWITCH_MANAGER_BLUEPRINT_IMAGE_DIR ?? "data/blueprints"),
     blueprintImageOverrideDir: resolveDataPath(
       process.env.SWITCH_MANAGER_BLUEPRINT_OVERRIDE_IMAGE_DIR ?? "data/blueprints-overrides"

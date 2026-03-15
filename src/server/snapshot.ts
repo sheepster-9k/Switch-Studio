@@ -182,7 +182,10 @@ export function buildSnapshotFromRawData(input: {
     deviceLinks,
     entityLinks
   )
-    .sort((left, right) => Number(left.id) - Number(right.id));
+    .sort((left, right) => {
+      const a = Number(left.id), b = Number(right.id);
+      return Number.isNaN(a) || Number.isNaN(b) ? left.id.localeCompare(right.id) : a - b;
+    });
 
   return {
     generatedAt: new Date().toISOString(),

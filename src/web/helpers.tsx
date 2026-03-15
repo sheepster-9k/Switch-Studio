@@ -217,10 +217,9 @@ function fallbackPathBounds(pathData: string): {
   if (xs.length === 0 || ys.length === 0) {
     return null;
   }
-  const minX = Math.min(...xs);
-  const maxX = Math.max(...xs);
-  const minY = Math.min(...ys);
-  const maxY = Math.max(...ys);
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  for (const x of xs) { if (x < minX) minX = x; if (x > maxX) maxX = x; }
+  for (const y of ys) { if (y < minY) minY = y; if (y > maxY) maxY = y; }
   return {
     cx: minX + (maxX - minX) / 2,
     cy: minY + (maxY - minY) / 2,
@@ -439,10 +438,14 @@ export function blueprintViewBox(
     return "0 0 320 420";
   }
   const bounds = blueprint.buttons.map((button, index) => buttonLayoutBounds(button, overrides[index]));
-  const minX = Math.min(...bounds.map((bound) => bound.minX)) - 24;
-  const minY = Math.min(...bounds.map((bound) => bound.minY)) - 24;
-  const maxX = Math.max(...bounds.map((bound) => bound.maxX)) + 24;
-  const maxY = Math.max(...bounds.map((bound) => bound.maxY)) + 24;
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  for (const b of bounds) {
+    if (b.minX < minX) minX = b.minX;
+    if (b.maxX > maxX) maxX = b.maxX;
+    if (b.minY < minY) minY = b.minY;
+    if (b.maxY > maxY) maxY = b.maxY;
+  }
+  minX -= 24; minY -= 24; maxX += 24; maxY += 24;
   return `${minX} ${minY} ${maxX - minX} ${maxY - minY}`;
 }
 

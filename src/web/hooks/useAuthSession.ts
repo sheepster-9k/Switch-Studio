@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import {
   AUTH_EXPIRED_EVENT,
@@ -48,6 +48,13 @@ export function useAuthSession(deps: {
 
   const authenticated = Boolean(authStatus?.authenticated);
 
+  const resetStudioStateRef = useRef(resetStudioState);
+  resetStudioStateRef.current = resetStudioState;
+  const setLoadingRef = useRef(setLoading);
+  setLoadingRef.current = setLoading;
+  const setBlockingErrorRef = useRef(setBlockingError);
+  setBlockingErrorRef.current = setBlockingError;
+
   function closeAuthDialog(): void {
     setAuthDialogOpen(false);
     setAuthError(null);
@@ -60,13 +67,13 @@ export function useAuthSession(deps: {
 
   useEffect(() => {
     const handleAuthExpired = () => {
-      resetStudioState();
+      resetStudioStateRef.current();
       setAuthBusy(false);
       setAuthChecking(false);
       closeAuthDialog();
       setAuthError("Session expired. Enter a Home Assistant token again.");
-      setBlockingError(null);
-      setLoading(false);
+      setBlockingErrorRef.current(null);
+      setLoadingRef.current(false);
       setAuthStatus((current) => ({
         authenticated: false,
         haBaseUrl: null,
