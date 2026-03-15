@@ -514,13 +514,15 @@ export function App() {
     setSaving(true);
     setNotice(null);
     try {
-      const saved = await saveConfig(draft);
+      const { config: saved, warning } = await saveConfig(draft);
       const reloaded = await loadStudio(saved.id, { blocking: false });
       setNotice({
-        kind: reloaded ? "success" : "error",
-        text: reloaded
-          ? "Configuration saved to Home Assistant."
-          : "Configuration saved, but the studio refresh failed."
+        kind: warning ? "error" : reloaded ? "success" : "error",
+        text: warning
+          ? warning
+          : reloaded
+            ? "Configuration saved to Home Assistant."
+            : "Configuration saved, but the studio refresh failed."
       });
     } catch (error) {
       showActionError(error);

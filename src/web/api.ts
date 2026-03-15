@@ -36,7 +36,15 @@ export function isAuthError(error: unknown): error is ApiError {
 
 async function parseResponse<T>(response: Response): Promise<T> {
   const body = await response.text();
-  const parsed = body ? (JSON.parse(body) as T & { error?: string }) : ({} as T & { error?: string });
+  let parsed: T & { error?: string };
+  try {
+    parsed = body ? (JSON.parse(body) as T & { error?: string }) : ({} as T & { error?: string });
+  } catch {
+    throw new ApiError(
+      response.ok ? "Received non-JSON response from server" : `Request failed with ${response.status}`,
+      response.status
+    );
+  }
   if (!response.ok) {
     if (response.status === 401) {
       notifyAuthExpired();
@@ -265,15 +273,15 @@ export async function fetchDeviceImage(deviceId: string): Promise<Blob> {
   return response.blob();
 }
 
-export async function saveConfig(config: SwitchManagerConfig): Promise<SwitchManagerConfig> {
-  const response = await parseResponse<{ config: SwitchManagerConfig }>(
+export async function saveConfig(config: SwitchManagerConfig): Promise<{ config: SwitchManagerConfig; warning?: string }> {
+  const response = await parseResponse<{ config: SwitchManagerConfig; warning?: string }>(
     await fetch("api/configs/save", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ config } satisfies SaveConfigRequest)
     })
   );
-  return response.config;
+  return { config: response.config, warning: response.warning };
 }
 
 export async function setConfigEnabled(id: string, enabled: boolean): Promise<void> {

@@ -2361,16 +2361,38 @@ async function main(): Promise<void> {
     const draft = body.config as SwitchManagerConfig;
 
     try {
-      const result = await wsClient.call<{ config_id: string; config: Record<string, unknown> }>({
-        type: "switch_manager/config/save",
-        config: normalizeConfigForSave(draft)
-      });
+      let result: { config_id: string; config: Record<string, unknown> };
+      try {
+        result = await wsClient.call<{ config_id: string; config: Record<string, unknown> }>({
+          type: "switch_manager/config/save",
+          config: normalizeConfigForSave(draft)
+        });
+      } catch (saveError) {
+        // Some Switch Manager versions reject the metadata field — retry without it.
+        if (draft.metadata) {
+          request.log.warn("Config save failed with metadata, retrying without: %s", errorMessage(saveError));
+          const stripped = normalizeConfigForSave({ ...draft, metadata: null });
+          result = await wsClient.call<{ config_id: string; config: Record<string, unknown> }>({
+            type: "switch_manager/config/save",
+            config: stripped
+          });
+        } else {
+          throw saveError;
+        }
+      }
+
       const savedId = asString(result.config_id) || draft.id;
       const savedConfig = normalizeConfigFromStore(savedId, isRecord(result.config) ? result.config : {});
+
+      // HA may not round-trip metadata — carry it forward from the draft so
+      // area sync and the client response both have the correct values.
+      savedConfig.metadata = draft.metadata;
+
       try {
         await syncConfigArea(wsClient, savedConfig);
       } catch (syncError) {
         request.log.error(syncError, "Area sync failed after config save");
+        return { ok: true, config: savedConfig, warning: "Config saved but area assignment failed: " + errorMessage(syncError) };
       }
       return { ok: true, config: savedConfig };
     } catch (error) {

@@ -2,6 +2,14 @@
 
 All notable changes to Switch Manager Studio are documented here.
 
+## [2.0.7] - 2026-03-15
+
+### Fixed
+- Area assignment now works for scene controllers and other configs — HA's Switch Manager integration does not round-trip the `metadata` field, so area sync was silently skipped; the draft's metadata is now carried forward for the sync call
+- Config save with metadata is now resilient: if the HA backend rejects the metadata field, the save automatically retries without it
+- Area sync errors are now surfaced to the UI as warnings instead of being swallowed silently
+- `parseResponse` in the API client now catches non-JSON server responses (e.g., proxy 502 HTML pages) and shows a clean error instead of a raw `SyntaxError`
+
 ## [2.0.6] - 2026-03-14
 
 ### Fixed
