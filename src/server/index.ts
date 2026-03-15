@@ -1643,7 +1643,8 @@ function buildExportAutomation(
   pressCount: number,
   virtual: boolean,
   sequence: SequenceStep[],
-  alias?: string
+  alias?: string,
+  mode?: string
 ): Record<string, unknown> {
   const nativeTitle = blueprint.buttons[buttonIndex]?.actions[actionIndex]?.title ?? `Action ${actionIndex + 1}`;
   const actionTitle =
@@ -1685,7 +1686,7 @@ function buildExportAutomation(
     ],
     conditions: [],
     actions: sequence,
-    mode: "single"
+    mode: mode ?? "single"
   };
 }
 
@@ -1731,6 +1732,10 @@ async function exportAutomation(
     throw new Error("Selected action has no sequence steps to export");
   }
 
+  const actionMode = virtual
+    ? buttonEntry.virtualActions.find((entry) => entry.pressCount === pressCount)?.mode
+    : buttonEntry.actions[payload.actionIndex]?.mode;
+
   const exported = buildExportAutomation(
     configEntry,
     blueprint,
@@ -1739,7 +1744,8 @@ async function exportAutomation(
     pressCount,
     virtual,
     sequence,
-    payload.alias
+    payload.alias,
+    actionMode ?? undefined
   );
 
   const filePath = resolveHaPath(config, config.automationsPath);
@@ -2028,15 +2034,6 @@ async function main(): Promise<void> {
       reply.code(400);
       return { error: "configId, buttonIndex, and actionIndex are required" };
     }
-    const payload = {
-      configId: body.configId,
-      buttonIndex: body.buttonIndex,
-      actionIndex: body.actionIndex,
-      pressCount: body.pressCount,
-      virtual: body.virtual,
-      alias: body.alias
-    };
-
     try {
       const snapshot = await buildSnapshotWithWebsocket(wsClient);
       return {

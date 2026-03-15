@@ -226,3 +226,19 @@ Advanced variables (rarely needed):
 - Backend talks to Home Assistant over WebSocket and REST
 - Home Assistant remains the source of truth for Switch Manager configs, blueprints, and service calls
 - mmWave Studio connects directly to the MQTT broker for real-time sensor communication
+
+## Credits and Acknowledgements
+
+Switch Manager Studio is built on top of and inspired by the work of others:
+
+- **[Switch Manager](https://github.com/Sian-Lee-SA/Home-Assistant-Switch-Manager)** by Sian Lee — the custom component that this studio is designed to complement. Switch Manager provides the core integration, blueprint system, and config storage that the studio edits. Without it, this project would not exist.
+- **[Home Assistant](https://www.home-assistant.io/)** — the open-source home automation platform that ties everything together. The studio communicates with HA via its WebSocket and REST APIs.
+- **[Zigbee2MQTT](https://www.zigbee2mqtt.io/)** — the mmWave Studio workspace relies on Z2M's MQTT bridge for real-time communication with mmWave presence sensors.
+
+### Built with
+
+- [Fastify](https://fastify.dev/) — server framework
+- [React](https://react.dev/) — frontend UI
+- [Vite](https://vite.dev/) — frontend build tooling
+- [MQTT.js](https://github.com/mqttjs/MQTT.js) — MQTT client for mmWave sensor communication
+- [yaml](https://eemeli.org/yaml/) — YAML parsing and serialization

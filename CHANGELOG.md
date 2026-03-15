@@ -1,0 +1,79 @@
+# Changelog
+
+All notable changes to Switch Manager Studio are documented here.
+
+## [2.0.6] - 2026-03-14
+
+### Fixed
+- Automation export now preserves the action's configured mode (`single`, `restart`, `queued`, `parallel`) instead of always hardcoding `single`
+- Removed dead `payload` variable in automation export route handler
+
+### Added
+- Credits and acknowledgements section in README citing Switch Manager, Home Assistant, Zigbee2MQTT, and key dependencies
+- This changelog
+
+## [2.0.5] - 2026-03-14
+
+### Fixed
+- `BlueprintPanel.handleFetchDeviceImage` was passing a plain string to `onNotify` instead of the required `{kind, text}` object, causing notifications to silently fail
+- `SensorPanel` image operations (import, fetch, reset) were silently swallowing errors with no user feedback — now shows inline error messages
+- mmWave runtime cache writes are now atomic (write to temp file, then rename) to prevent corruption on crash
+
+## [2.0.4] - 2026-03-14
+
+### Fixed
+- Blueprint image URL now uses a relative path so images load correctly through HA ingress
+- Automation export parses existing `automations.yaml` as a YAML array instead of blind string append — handles empty and null files safely
+- Profile area writes are now sequential (detection, stay, then interference) to avoid firmware command interleaving
+- Profile name/notes form no longer resets when background data refreshes
+
+### Added
+- Entity control domain allowlist to prevent service injection via crafted entity IDs
+- WebSocket proxy in Vite dev server config so mmWave works in development mode
+
+## [2.0.3] - 2026-03-14
+
+### Fixed
+- Supervisor WebSocket auth: added `homeassistant_api: true` so `SUPERVISOR_TOKEN` authenticates with HA Core WebSocket
+- mmWave API calls changed from absolute to relative URLs so HA ingress `<base href>` works correctly
+- mmWave WebSocket URL now resolves against base href for ingress compatibility
+- `INGRESS_ENTRY` is sanitized before HTML injection (XSS prevention)
+- Automation export `event_data` is now built incrementally instead of overwriting via spread operators
+- WebSocket connection timeout (15s) prevents permanent hangs when HA stalls
+- Profile export download: delayed Object URL revocation from immediate to 10s
+- `LazyMmwaveBridge` race condition that could create duplicate MQTT connections on concurrent activation
+
+### Added
+- `Authorization` header on WebSocket upgrade request for Supervisor proxy compatibility
+- Startup REST API token validation with diagnostic logging
+- Token source logging in `run.sh`
+
+## [2.0.2] - 2026-03-14
+
+### Fixed
+- Auth screen no longer appears when running as a Supervisor add-on with `SUPERVISOR_TOKEN`
+
+## [2.0.1] - 2026-03-14
+
+### Fixed
+- Multi-arch Docker build: Vite/rolldown build stage now runs on the CI host platform (`--platform=$BUILDPLATFORM`) to avoid missing native binding errors on armhf/armv7
+
+## [2.0.0] - 2026-03-14
+
+### Added
+- First stable release
+- Visual editor for Switch Manager configs with button actions and per-button sequencing
+- Guided discovery for unmapped devices
+- Blueprint-aware editing with layout overrides, rotation, and area assignment
+- Virtual multi-press editing
+- Learn mode integration
+- Automation import and export
+- Blueprint package export
+- Device property inspection and entity control
+- mmWave Studio workspace with live zone editor, teach mode, corner fit, and profile management
+- Home Assistant add-on with zero-config Supervisor authentication
+- Standalone Docker and Node.js deployment support
+
+### Changed
+- UI polish: loading spinners, empty states, card borders, disabled button states, error banners
+- Multiple bug fixes from initial code audit
