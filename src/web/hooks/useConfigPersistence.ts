@@ -12,10 +12,7 @@ import type {
   AutomationSummary,
   SwitchManagerConfig
 } from "../../shared/types";
-import { cloneConfig } from "../helpers";
-
-type AutomationTarget = "native" | "virtual";
-type NoticeState = { kind: "error" | "success"; text: string };
+import { cloneConfig, type AutomationTarget, type NoticeState } from "../helpers";
 
 export interface ConfigPersistenceState {
   saving: boolean;
@@ -45,6 +42,7 @@ export function useConfigPersistence(deps: {
   setSelectedConfigId: React.Dispatch<React.SetStateAction<string>>;
   setAutomations: React.Dispatch<React.SetStateAction<AutomationSummary[]>>;
   loadStudio: (preferredConfigId?: string, options?: { blocking?: boolean }) => Promise<boolean>;
+  resetDraftSelections: () => void;
   setNotice: (notice: NoticeState | null) => void;
   showActionError: (error: unknown) => void;
 }): ConfigPersistence {
@@ -61,6 +59,7 @@ export function useConfigPersistence(deps: {
     setSelectedConfigId,
     setAutomations,
     loadStudio,
+    resetDraftSelections,
     setNotice,
     showActionError
   } = deps;
@@ -128,6 +127,7 @@ export function useConfigPersistence(deps: {
     if (!draft.id) {
       setDraft(selectedStoredConfig ? cloneConfig(selectedStoredConfig) : null);
       setSelectedConfigId(selectedStoredConfig?.id ?? "");
+      resetDraftSelections();
       return;
     }
     if (!window.confirm(`Delete "${draft.name}"?`)) {

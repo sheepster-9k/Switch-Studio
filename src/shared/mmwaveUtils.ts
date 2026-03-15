@@ -1,4 +1,5 @@
 import type { AreaCollection, AreaKind, AreaRect, AreaSlot, DeviceAreaLabels, StudioProfile } from "./mmwaveTypes.js";
+import { asNumber } from "./utils.js";
 export { clamp } from "./utils.js";
 
 export const ZERO_AREA: AreaRect = {
@@ -17,18 +18,14 @@ export function isFiniteNumber(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value);
 }
 
-export function finiteOr(value: unknown, fallback: number): number {
-  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
-}
-
 export function cloneArea(area?: Partial<AreaRect> | null): AreaRect {
   return {
-    width_min: finiteOr(area?.width_min, ZERO_AREA.width_min),
-    width_max: finiteOr(area?.width_max, ZERO_AREA.width_max),
-    depth_min: finiteOr(area?.depth_min, ZERO_AREA.depth_min),
-    depth_max: finiteOr(area?.depth_max, ZERO_AREA.depth_max),
-    height_min: finiteOr(area?.height_min, ZERO_AREA.height_min),
-    height_max: finiteOr(area?.height_max, ZERO_AREA.height_max)
+    width_min: asNumber(area?.width_min, ZERO_AREA.width_min),
+    width_max: asNumber(area?.width_max, ZERO_AREA.width_max),
+    depth_min: asNumber(area?.depth_min, ZERO_AREA.depth_min),
+    depth_max: asNumber(area?.depth_max, ZERO_AREA.depth_max),
+    height_min: asNumber(area?.height_min, ZERO_AREA.height_min),
+    height_max: asNumber(area?.height_max, ZERO_AREA.height_max)
   };
 }
 

@@ -328,20 +328,26 @@ export function scoreBlueprintSuggestion(device: DeviceSummary, blueprint: Switc
   return blueprintTokens.reduce((score, token) => score + (deviceTokens.has(token) ? 1 : 0), 0);
 }
 
-export function automationReferencesEntities(automation: AutomationSummary, entityIds: string[]): boolean {
-  const entitySet = new Set(entityIds);
-  const haystack = JSON.stringify({
+export function automationReferencesEntities(haystack: string, entityIds: string[]): boolean {
+  return entityIds.some((entityId) => haystack.includes(entityId));
+}
+
+function stringifyAutomation(automation: AutomationSummary): string {
+  return JSON.stringify({
     triggers: automation.triggers,
     conditions: automation.conditions,
     actions: automation.actions
   });
-  return [...entitySet].some((entityId) => haystack.includes(entityId));
 }
 
 export function buildDiscoveryCandidates(
   snapshot: StudioSnapshot,
   automations: AutomationSummary[]
 ): DiscoveryCandidate[] {
+  const automationHaystacks = automations.map((automation) => ({
+    id: automation.id,
+    haystack: stringifyAutomation(automation)
+  }));
   return snapshot.devices
     .filter((device) => device.entityIds.length > 0)
     .map((device) => {
@@ -355,10 +361,10 @@ export function buildDiscoveryCandidates(
         .sort((left, right) => right.score - left.score)
         .slice(0, 3)
         .map((entry) => entry.id);
-      const relatedAutomationIds = automations
-        .filter((automation) => automationReferencesEntities(automation, device.entityIds))
+      const relatedAutomationIds = automationHaystacks
+        .filter((entry) => automationReferencesEntities(entry.haystack, device.entityIds))
         .slice(0, 8)
-        .map((automation) => automation.id);
+        .map((entry) => entry.id);
 
       return {
         id: device.id,

@@ -7,13 +7,14 @@ import {
   uploadBlueprintImageOverride
 } from "../api";
 import { blueprintImageUrl, convertToPng, loadImageElement } from "../imageUtils";
-import type {
-  AreaSummary,
-  BlueprintImageStatus,
-  SwitchManagerBlueprint,
-  SwitchManagerButtonLayoutOverride,
-  SwitchManagerConfig,
-  SwitchManagerGridSettings
+import {
+  errorMessage,
+  type AreaSummary,
+  type BlueprintImageStatus,
+  type SwitchManagerBlueprint,
+  type SwitchManagerButtonLayoutOverride,
+  type SwitchManagerConfig,
+  type SwitchManagerGridSettings
 } from "../../shared/types";
 import { clamp } from "../../shared/utils";
 import {
@@ -474,7 +475,7 @@ export function BlueprintPanel(props: BlueprintPanelProps) {
     } catch (error) {
       onNotify({
         kind: "error",
-        text: error instanceof Error ? error.message : "Auto-detect failed for this button."
+        text: errorMessage(error)
       });
     }
   }
@@ -498,7 +499,7 @@ export function BlueprintPanel(props: BlueprintPanelProps) {
     } catch (error) {
       onNotify({
         kind: "error",
-        text: error instanceof Error ? error.message : "Blueprint image import failed."
+        text: errorMessage(error)
       });
     } finally {
       setImageBusy(false);
@@ -523,7 +524,7 @@ export function BlueprintPanel(props: BlueprintPanelProps) {
     } catch (error) {
       onNotify({
         kind: "error",
-        text: error instanceof Error ? error.message : "Blueprint image reset failed."
+        text: errorMessage(error)
       });
     } finally {
       setImageBusy(false);
@@ -544,7 +545,7 @@ export function BlueprintPanel(props: BlueprintPanelProps) {
       setLayoutEditingEnabled(true);
       onNotify({ kind: "success", text: `Fetched device image${status.width && status.height ? ` (${status.width}x${status.height})` : ""}.` });
     } catch (error) {
-      onNotify({ kind: "error", text: error instanceof Error ? error.message : "Device image fetch failed." });
+      onNotify({ kind: "error", text: errorMessage(error) });
     } finally {
       setImageBusy(false);
     }

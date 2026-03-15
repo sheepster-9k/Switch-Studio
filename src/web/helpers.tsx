@@ -18,6 +18,10 @@ import { cloneValue, isRecord, asNumber } from "../shared/utils";
 
 export { isRecord };
 
+export type WorkspaceMode = "editor" | "virtual" | "teach" | "automations" | "discovery" | "mmwave";
+export type AutomationTarget = "native" | "virtual";
+export type NoticeState = { kind: "error" | "success"; text: string };
+
 export function cloneConfig(config: SwitchManagerConfig): SwitchManagerConfig {
   return cloneValue(config);
 }

@@ -204,11 +204,11 @@ export async function serveLocalBlueprintImage(
   }
 
   const imagePath = resolve(imageRoot, `${safeBlueprintId}.png`);
-  if (!(await fileExists(imagePath))) {
+  try {
+    return await readFile(imagePath);
+  } catch {
     return null;
   }
-
-  return readFile(imagePath);
 }
 
 export async function loadBlueprintImageBuffer(
@@ -253,10 +253,14 @@ export async function saveBlueprintImageOverride(
 
 export async function removeBlueprintImageOverride(overrideRoot: string, blueprintId: string): Promise<void> {
   const imagePath = blueprintImagePath(overrideRoot, blueprintId);
-  if (!imagePath || !(await fileExists(imagePath))) {
+  if (!imagePath) {
     return;
   }
-  await unlink(imagePath);
+  try {
+    await unlink(imagePath);
+  } catch {
+    // File already gone — nothing to do.
+  }
 }
 
 export async function loadBlueprintImageStatus(

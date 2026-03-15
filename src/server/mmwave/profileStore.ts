@@ -11,7 +11,8 @@ import type {
   StudioProfile,
   UpsertProfileRequest
 } from "../../shared/mmwaveTypes.js";
-import { ZERO_AREA, finiteOr, clamp, cloneArea, sortProfiles } from "../../shared/mmwaveUtils.js";
+import { ZERO_AREA, clamp, cloneArea, sortProfiles } from "../../shared/mmwaveUtils.js";
+import { asNumber } from "../../shared/utils.js";
 
 interface ProfileFile {
   version: 1;
@@ -36,12 +37,12 @@ function cloneCollection(input?: Partial<Record<AreaSlot, Partial<AreaRect> | nu
 
 function cloneBounds(bounds?: Partial<BaseBounds> | null): BaseBounds {
   return {
-    width_min: finiteOr(bounds?.width_min, -600),
-    width_max: finiteOr(bounds?.width_max, 600),
-    depth_min: finiteOr(bounds?.depth_min, 0),
-    depth_max: finiteOr(bounds?.depth_max, 600),
-    height_min: finiteOr(bounds?.height_min, -300),
-    height_max: finiteOr(bounds?.height_max, 300)
+    width_min: asNumber(bounds?.width_min, -600),
+    width_max: asNumber(bounds?.width_max, 600),
+    depth_min: asNumber(bounds?.depth_min, 0),
+    depth_max: asNumber(bounds?.depth_max, 600),
+    height_min: asNumber(bounds?.height_min, -300),
+    height_max: asNumber(bounds?.height_max, 300)
   };
 }
 
@@ -51,15 +52,15 @@ function normalizeSettings(input: Partial<DeviceProfileSettings> | null | undefi
     detectSensitivity: typeof input?.detectSensitivity === "string" ? input.detectSensitivity : "Medium",
     detectTrigger:
       typeof input?.detectTrigger === "string" ? input.detectTrigger : "Fast (0.2s, default)",
-    holdTime: finiteOr(input?.holdTime, 30),
-    stayLife: finiteOr(input?.stayLife, 300),
+    holdTime: asNumber(input?.holdTime, 30),
+    stayLife: asNumber(input?.stayLife, 300),
     targetInfoReport:
       typeof input?.targetInfoReport === "string" ? input.targetInfoReport : "Enable",
     controlWiredDevice:
       typeof input?.controlWiredDevice === "string"
         ? input.controlWiredDevice
         : "Occupancy (default)",
-    defaultLevelLocal: clamp(Math.round(finiteOr(input?.defaultLevelLocal, 255)), 1, 255),
+    defaultLevelLocal: clamp(Math.round(asNumber(input?.defaultLevelLocal, 255)), 1, 255),
     baseBounds: cloneBounds(input?.baseBounds)
   };
 }

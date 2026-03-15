@@ -2,6 +2,25 @@
 
 All notable changes to Switch Manager Studio are documented here.
 
+## [2.0.9] - 2026-03-15
+
+### Fixed
+- `parseDuration` now correctly parses `MM:SS` duration strings — previously it dropped the minutes and used only the first number as seconds (e.g., `"05:30"` became 5s instead of 5m30s)
+- Discarding an unsaved draft no longer incorrectly marks the replacement config as dirty
+- MQTT message routing now works with multi-segment base topics (e.g., `home/z2m`) — previously only single-segment topics like `zigbee2mqtt` were correctly parsed
+- Blueprint image file operations no longer race (TOCTOU) — removed pre-existence checks in favor of direct read/unlink with error handling
+
+### Changed
+- `useDraftConfig` Maps (`blueprintsById`, `devicesById`, `entitiesById`) are now memoized with `useMemo` instead of recreated every render
+- Dirty detection uses an incremental flag instead of double `JSON.stringify` comparison on every render
+- Consolidated duplicate `WorkspaceMode`, `AutomationTarget`, and `NoticeState` type definitions into `helpers.tsx`
+- Replaced `finiteOr` with shared `asNumber` utility across mmWave modules
+- Replaced inline `error instanceof Error` checks with shared `errorMessage()` in BlueprintPanel and SensorPanel
+- Pre-stringify automation objects in discovery scoring to avoid O(D*A) serialization
+- Replaced inline `Math.max/Math.min` with shared `clamp()` in App.tsx
+- Replaced duplicated `moveStepToIndex` in SequenceEditor with imported `moveSequenceEntry`
+- Removed duplicate `WORKSPACE_DETAILS` constant (consolidated into `WORKSPACE_OPTIONS`)
+
 ## [2.0.8] - 2026-03-15
 
 ### Changed

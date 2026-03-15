@@ -22,7 +22,8 @@ import type {
   TargetTrackingState,
   UpdateSettingsRequest
 } from "../../shared/mmwaveTypes.js";
-import { ZERO_AREA, finiteOr, clamp, cloneArea, cloneAreaCollection, isFiniteNumber } from "../../shared/mmwaveUtils.js";
+import { ZERO_AREA, clamp, cloneArea, cloneAreaCollection, isFiniteNumber } from "../../shared/mmwaveUtils.js";
+import { asNumber } from "../../shared/utils.js";
 import type { MmwaveConfig } from "../config.js";
 
 type StudioConfig = MmwaveConfig;
@@ -119,12 +120,12 @@ function normalizeAreaOccupancy(raw: Record<string, unknown>): Record<AreaSlot, 
 
 function normalizeBaseBounds(raw: Record<string, unknown>): BaseBounds {
   return {
-    width_min: finiteOr(raw.mmWaveWidthMin, -600),
-    width_max: finiteOr(raw.mmWaveWidthMax, 600),
-    depth_min: finiteOr(raw.mmWaveDepthMin, 0),
-    depth_max: finiteOr(raw.mmWaveDepthMax, 600),
-    height_min: finiteOr(raw.mmWaveHeightMin, -300),
-    height_max: finiteOr(raw.mmWaveHeightMax, 300)
+    width_min: asNumber(raw.mmWaveWidthMin, -600),
+    width_max: asNumber(raw.mmWaveWidthMax, 600),
+    depth_min: asNumber(raw.mmWaveDepthMin, 0),
+    depth_max: asNumber(raw.mmWaveDepthMax, 600),
+    height_min: asNumber(raw.mmWaveHeightMin, -300),
+    height_max: asNumber(raw.mmWaveHeightMax, 300)
   };
 }
 
@@ -134,8 +135,8 @@ function normalizeTargetPoints(raw: Record<string, unknown>): TargetPoint[] {
     return direct
       .filter((entry): entry is Record<string, unknown> => Boolean(entry) && typeof entry === "object")
       .map((entry) => ({
-        x: finiteOr(entry.x, 0),
-        y: finiteOr(entry.y, 0),
+        x: asNumber(entry.x, 0),
+        y: asNumber(entry.y, 0),
         z: typeof entry.z === "number" ? entry.z : undefined,
         id: typeof entry.id === "number" ? entry.id : undefined,
         speed: typeof entry.speed === "number" ? entry.speed : undefined,
@@ -180,8 +181,8 @@ function normalizeTelemetryTargets(payload: unknown): TargetPoint[] {
     return payload
       .filter((entry): entry is Record<string, unknown> => Boolean(entry) && typeof entry === "object")
       .map((entry) => ({
-        x: finiteOr(entry.x, 0),
-        y: finiteOr(entry.y, 0),
+        x: asNumber(entry.x, 0),
+        y: asNumber(entry.y, 0),
         z: isFiniteNumber(entry.z) ? entry.z : undefined,
         id: isFiniteNumber(entry.id) ? entry.id : undefined,
         speed: isFiniteNumber(entry.speed) ? entry.speed : isFiniteNumber(entry.dop) ? entry.dop : undefined,
@@ -419,11 +420,11 @@ function buildSnapshot(
       roomPreset: stringOr(rawState.mmWaveRoomSizePreset, "Custom"),
       detectSensitivity: stringOr(rawState.mmWaveDetectSensitivity, "Medium"),
       detectTrigger: stringOr(rawState.mmWaveDetectTrigger, "Fast (0.2s, default)"),
-      holdTime: finiteOr(rawState.mmWaveHoldTime, 30),
-      stayLife: finiteOr(rawState.mmWaveStayLife, 300),
+      holdTime: asNumber(rawState.mmWaveHoldTime, 30),
+      stayLife: asNumber(rawState.mmWaveStayLife, 300),
       targetInfoReport: stringOr(rawState.mmWaveTargetInfoReport, "Enable"),
       controlWiredDevice: stringOr(rawState.mmwaveControlWiredDevice, "Occupancy (default)"),
-      defaultLevelLocal: clamp(finiteOr(rawState.defaultLevelLocal, 255), 1, 255),
+      defaultLevelLocal: clamp(asNumber(rawState.defaultLevelLocal, 255), 1, 255),
       mmwaveVersion: nullableNumber(rawState.mmWaveVersion),
       baseBounds: normalizeBaseBounds(rawState),
       state: stringOr(rawState.state, "UNKNOWN"),
@@ -657,7 +658,12 @@ export class MqttStudioBridge {
       return;
     }
 
-    const [, second, third] = topic.split("/");
+    const basePrefix = `${this.config.baseTopic}/`;
+    if (!topic.startsWith(basePrefix)) {
+      return;
+    }
+    const segments = topic.slice(basePrefix.length).split("/");
+    const [second, third] = segments;
     const parsed = parseJson(payload);
 
     if (second === "bridge" && third === "devices" && Array.isArray(parsed)) {

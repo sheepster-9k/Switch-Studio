@@ -372,8 +372,8 @@ export function parseDuration(value: unknown): DurationParts | null {
     return {
       hours: hasHours ? Number.parseInt(match[1] ?? "0", 10) : 0,
       milliseconds: Number.parseInt(match[4] ?? "0", 10),
-      minutes: Number.parseInt(hasHours ? match[2] : "0", 10),
-      seconds: Number.parseInt(hasHours ? match[3] : match[2], 10)
+      minutes: Number.parseInt(match[2], 10),
+      seconds: Number.parseInt(match[3], 10)
     };
   }
   if (isRecord(value)) {

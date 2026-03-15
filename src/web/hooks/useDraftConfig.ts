@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 
 import type {
   AutomationSummary,
@@ -9,10 +9,7 @@ import type {
   SwitchManagerBlueprint,
   SwitchManagerConfig
 } from "../../shared/types";
-import { cloneConfig, cloneStep, resolvedConfigAreaId } from "../helpers";
-
-type AutomationTarget = "native" | "virtual";
-type WorkspaceMode = "editor" | "virtual" | "teach" | "automations" | "discovery" | "mmwave";
+import { cloneConfig, cloneStep, resolvedConfigAreaId, type AutomationTarget, type WorkspaceMode } from "../helpers";
 
 export interface DraftConfigState {
   selectedConfigId: string;
@@ -72,17 +69,36 @@ export function useDraftConfig(deps: {
   const [selectedVirtualPressCount, setSelectedVirtualPressCount] = useState(2);
   const [automationTarget, setAutomationTarget] = useState<AutomationTarget>("native");
 
-  const blueprintsById = new Map(snapshot?.blueprints.map((blueprint) => [blueprint.id, blueprint]) ?? []);
-  const devicesById = new Map(snapshot?.devices.map((device) => [device.id, device]) ?? []);
-  const entitiesById = new Map(snapshot?.entities.map((entity) => [entity.entityId, entity]) ?? []);
+  const [dirtyFlag, setDirtyFlag] = useState(false);
 
-  const selectedStoredConfig = snapshot?.configs.find((config) => config.id === selectedConfigId) ?? null;
+  const blueprintsById = useMemo(
+    () => new Map(snapshot?.blueprints.map((blueprint) => [blueprint.id, blueprint]) ?? []),
+    [snapshot]
+  );
+  const devicesById = useMemo(
+    () => new Map(snapshot?.devices.map((device) => [device.id, device]) ?? []),
+    [snapshot]
+  );
+  const entitiesById = useMemo(
+    () => new Map(snapshot?.entities.map((entity) => [entity.entityId, entity]) ?? []),
+    [snapshot]
+  );
+
+  const setDraftAndDirty: typeof setDraft = useCallback((action) => {
+    setDraft((current) => {
+      const next = typeof action === "function" ? action(current) : action;
+      setDirtyFlag(next !== null && next !== current);
+      return next;
+    });
+  }, []);
+
+  const selectedStoredConfig = useMemo(
+    () => snapshot?.configs.find((config) => config.id === selectedConfigId) ?? null,
+    [snapshot, selectedConfigId]
+  );
   const selectedBlueprint = draft ? blueprintsById.get(draft.blueprintId) ?? null : null;
   const selectedAreaId = draft ? resolvedConfigAreaId(draft, devicesById, entitiesById) : null;
-  const dirty = Boolean(
-    draft &&
-      (!selectedStoredConfig || JSON.stringify(draft) !== JSON.stringify(selectedStoredConfig))
-  );
+  const dirty = dirtyFlag && draft !== null;
 
   function resetDraftSelections(): void {
     setSelectedButtonIndex(0);
@@ -90,6 +106,7 @@ export function useDraftConfig(deps: {
     setSelectedStepIndex(0);
     setSelectedVirtualPressCount(2);
     setAutomationTarget("native");
+    setDirtyFlag(false);
   }
 
   function applySnapshot(nextSnapshot: StudioSnapshot, preferredConfigId?: string): void {
@@ -126,6 +143,7 @@ export function useDraftConfig(deps: {
       mutator(next);
       return next;
     });
+    setDirtyFlag(true);
   }
 
   function updateSelectedStep(mutator: (step: SequenceStep) => SequenceStep): void {
@@ -269,7 +287,7 @@ export function useDraftConfig(deps: {
     replaceSelectedStep,
     updateVirtualAction,
     handleImportAutomation,
-    setDraft,
+    setDraft: setDraftAndDirty,
     setSelectedConfigId,
     setSelectedButtonIndex,
     setSelectedActionIndex,

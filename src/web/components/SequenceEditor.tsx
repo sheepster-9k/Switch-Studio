@@ -497,13 +497,7 @@ export function SequenceListEditor(props: SequenceListEditorProps) {
   }
 
   function moveStepToIndex(fromIndex: number, toIndex: number): void {
-    if (fromIndex === toIndex || fromIndex < 0 || toIndex < 0 || fromIndex >= sequence.length || toIndex >= sequence.length) {
-      return;
-    }
-    const nextSequence = sequence.map((entry) => cloneStep(entry));
-    const [moved] = nextSequence.splice(fromIndex, 1);
-    nextSequence.splice(toIndex, 0, moved);
-    commit(nextSequence, toIndex);
+    moveSequenceEntry(sequence, fromIndex, toIndex, commit);
   }
 
   return (

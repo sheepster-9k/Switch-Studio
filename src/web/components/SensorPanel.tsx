@@ -7,11 +7,12 @@ import {
   uploadBlueprintImageOverride
 } from "../api";
 import { blueprintImageUrl, convertToPng } from "../imageUtils";
-import type {
-  AreaSummary,
-  BlueprintImageStatus,
-  SwitchManagerBlueprint,
-  SwitchManagerConfig
+import {
+  errorMessage,
+  type AreaSummary,
+  type BlueprintImageStatus,
+  type SwitchManagerBlueprint,
+  type SwitchManagerConfig
 } from "../../shared/types";
 
 interface SensorPanelProps {
@@ -94,7 +95,7 @@ export function SensorPanel(props: SensorPanelProps) {
       setImageStatus(status);
       setImageRevision((current) => current + 1);
     } catch (error) {
-      setImageError(error instanceof Error ? error.message : "Image upload failed.");
+      setImageError(errorMessage(error));
     } finally {
       setImageBusy(false);
       if (fileInputRef.current) {
@@ -111,7 +112,7 @@ export function SensorPanel(props: SensorPanelProps) {
       setImageStatus(status);
       setImageRevision((current) => current + 1);
     } catch (error) {
-      setImageError(error instanceof Error ? error.message : "Image reset failed.");
+      setImageError(errorMessage(error));
     } finally {
       setImageBusy(false);
     }
@@ -130,7 +131,7 @@ export function SensorPanel(props: SensorPanelProps) {
       setImageStatus(status);
       setImageRevision((current) => current + 1);
     } catch (error) {
-      setImageError(error instanceof Error ? error.message : "Device image fetch failed.");
+      setImageError(errorMessage(error));
     } finally {
       setImageBusy(false);
     }

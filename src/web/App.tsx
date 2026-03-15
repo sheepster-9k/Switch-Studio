@@ -16,9 +16,12 @@ import {
   createDraftFromDiscovery,
   ensureLayoutMetadata,
   ensureSwitchMetadata,
-  matchesSearch
+  matchesSearch,
+  type NoticeState,
+  type WorkspaceMode
 } from "./helpers";
 import { errorMessage } from "../shared/types";
+import { clamp } from "../shared/utils";
 import { useAuthSession } from "./hooks/useAuthSession";
 import { useStudioData } from "./hooks/useStudioData";
 import { useDraftConfig } from "./hooks/useDraftConfig";
@@ -26,9 +29,6 @@ import { useConfigPersistence } from "./hooks/useConfigPersistence";
 import { useLearningSession } from "./hooks/useLearningSession";
 
 const LazyMmwaveWorkspace = lazy(() => import("./components/mmwave/MmwaveWorkspace"));
-
-type WorkspaceMode = "editor" | "virtual" | "teach" | "automations" | "discovery" | "mmwave";
-type NoticeState = { kind: "error" | "success"; text: string };
 
 const WORKSPACE_OPTIONS: Array<{
   description: string;
@@ -73,33 +73,6 @@ const WORKSPACE_OPTIONS: Array<{
     requiresDraft: false
   }
 ];
-
-const WORKSPACE_DETAILS: Record<WorkspaceMode, { description: string; label: string }> = {
-  automations: {
-    description: "Import and export Home Assistant automations for the active switch.",
-    label: "Automations"
-  },
-  discovery: {
-    description: "Scan and draft new switches without crowding the editor.",
-    label: "Discovery"
-  },
-  editor: {
-    description: "Core switch config, rooms, layout, and native actions.",
-    label: "Editor"
-  },
-  mmwave: {
-    description: "Program motion zones for Inovelli VZM32-SN mmWave switches.",
-    label: "mmWave Studio"
-  },
-  teach: {
-    description: "Capture switch presses and build the learn library.",
-    label: "Teach"
-  },
-  virtual: {
-    description: "Synthetic multi-press setup for the selected switch button.",
-    label: "Virtual Press"
-  }
-};
 
 export function App() {
   const [notice, setNotice] = useState<NoticeState | null>(null);
@@ -176,6 +149,7 @@ export function App() {
     setSelectedConfigId: draft.setSelectedConfigId,
     setAutomations: studio.setAutomations,
     loadStudio: studio.loadStudio,
+    resetDraftSelections: draft.resetDraftSelections,
     setNotice,
     showActionError
   });
@@ -252,7 +226,7 @@ export function App() {
       ? `Button ${draft.selectedButtonIndex + 1} — ${draft.selectedVirtualPressCount}x press`
       : `Button ${draft.selectedButtonIndex + 1} — action ${draft.selectedActionIndex + 1}`;
 
-  const activeWorkspaceOption = WORKSPACE_DETAILS[activeWorkspace];
+  const activeWorkspaceOption = WORKSPACE_OPTIONS.find((option) => option.id === activeWorkspace);
 
   // --- Early returns for auth states ---
 
@@ -436,7 +410,7 @@ export function App() {
           <div className="workspace-switcher__header">
             <div>
               <p className="eyebrow">Workspace</p>
-              <h3>{activeWorkspaceOption.label}</h3>
+              <h3>{activeWorkspaceOption?.label}</h3>
             </div>
             {activeWorkspace !== "editor" ? (
               <button className="button button--ghost" onClick={() => handleWorkspaceChange("editor")} type="button">
@@ -546,20 +520,20 @@ export function App() {
                       }
                       onVirtualMultiPressMaxPressesChange={(value) =>
                         draft.updateDraft((nextDraft) => {
-                          nextDraft.virtualMultiPress.maxPresses = Math.max(2, Math.min(10, value));
+                          nextDraft.virtualMultiPress.maxPresses = clamp(value, 2, 10);
                           nextDraft.buttons.forEach((button) => {
                             button.virtualActions = button.virtualActions.filter(
                               (entry) => entry.pressCount <= nextDraft.virtualMultiPress.maxPresses
                             );
                           });
                           draft.setSelectedVirtualPressCount((current) =>
-                            Math.min(current, Math.max(2, Math.min(10, value)))
+                            Math.min(current, clamp(value, 2, 10))
                           );
                         })
                       }
                       onVirtualMultiPressWindowChange={(value) =>
                         draft.updateDraft((nextDraft) => {
-                          nextDraft.virtualMultiPress.pressWindowMs = Math.max(150, Math.min(3000, value));
+                          nextDraft.virtualMultiPress.pressWindowMs = clamp(value, 150, 3000);
                         })
                       }
                       selectedBlueprint={draft.selectedBlueprint}
