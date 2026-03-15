@@ -294,6 +294,8 @@ function MmwaveWorkspace() {
           setDevices((current) => applyDeviceUpdate(current, message.device));
         });
       }
+    }, (connectionError) => {
+      setError(connectionError);
     });
   }, []);
 
@@ -349,10 +351,19 @@ function MmwaveWorkspace() {
     setError(null);
   }
 
-  if (!bridge && devices.length === 0 && !error) {
+  if (!bridge && devices.length === 0) {
     return (
       <div className="mmwave-workspace">
-        <section className="panel loading-state">Loading mmWave Studio...</section>
+        <section className="panel loading-state">
+          {error ? (
+            <>
+              <p className="error-banner">{error}</p>
+              <p className="panel-copy">The mmWave workspace requires a working MQTT connection to Zigbee2MQTT.</p>
+            </>
+          ) : (
+            "Loading mmWave Studio..."
+          )}
+        </section>
       </div>
     );
   }

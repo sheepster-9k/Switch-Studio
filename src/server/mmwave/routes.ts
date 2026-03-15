@@ -174,11 +174,11 @@ function sanitizeSettingsRequest(body: unknown): UpdateSettingsRequest | null {
 
 export async function registerMmwaveRoutes(app: FastifyInstance, lazy: LazyMmwaveBridge): Promise<void> {
   const ensureBridge = async () => {
-    const bridge = lazy.getBridge();
-    if (!bridge) {
-      throw new Error("mmWave bridge is not active");
+    try {
+      return await lazy.activate();
+    } catch {
+      throw new Error("mmWave bridge is not available");
     }
-    return bridge;
   };
 
   app.get("/api/mmwave/studio", async () => {

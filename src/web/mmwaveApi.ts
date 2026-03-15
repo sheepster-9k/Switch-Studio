@@ -147,13 +147,17 @@ export function mmwaveUpdateSettings(
   });
 }
 
-export function connectMmwaveStream(onMessage: (message: WsServerMessage) => void): () => void {
+export function connectMmwaveStream(
+  onMessage: (message: WsServerMessage) => void,
+  onConnectionError?: (error: string) => void
+): () => void {
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
   const url = `${protocol}//${window.location.host}/ws/mmwave`;
   let socket: WebSocket | null = null;
   let reconnectTimer: number | null = null;
   let reconnectDelayMs = 1000;
   let disposed = false;
+  let consecutiveFailures = 0;
 
   const clearReconnectTimer = () => {
     if (reconnectTimer !== null) {
@@ -181,6 +185,7 @@ export function connectMmwaveStream(onMessage: (message: WsServerMessage) => voi
     socket = new WebSocket(url);
     socket.onopen = () => {
       reconnectDelayMs = 1000;
+      consecutiveFailures = 0;
     };
     socket.onmessage = (event) => {
       try {
@@ -194,6 +199,10 @@ export function connectMmwaveStream(onMessage: (message: WsServerMessage) => voi
     };
     socket.onclose = () => {
       socket = null;
+      consecutiveFailures++;
+      if (consecutiveFailures >= 3 && onConnectionError) {
+        onConnectionError("Unable to connect to mmWave service. Check that MQTT is configured.");
+      }
       scheduleReconnect();
     };
   };
