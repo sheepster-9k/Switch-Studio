@@ -47,6 +47,7 @@ export function SensorPanel(props: SensorPanelProps) {
   const [imageStatus, setImageStatus] = useState<BlueprintImageStatus | null>(null);
   const [imageRevision, setImageRevision] = useState(0);
   const [imageBusy, setImageBusy] = useState(false);
+  const [imageError, setImageError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -87,13 +88,13 @@ export function SensorPanel(props: SensorPanelProps) {
     }
     try {
       setImageBusy(true);
+      setImageError(null);
       const pngBlob = await convertToPng(file);
       const status = await uploadBlueprintImageOverride(selectedBlueprint.id, pngBlob, file.name);
       setImageStatus(status);
       setImageRevision((current) => current + 1);
     } catch (error) {
-      // Error silently falls through; no onNotify prop on SensorPanel. User sees no change.
-      void error;
+      setImageError(error instanceof Error ? error.message : "Image upload failed.");
     } finally {
       setImageBusy(false);
       if (fileInputRef.current) {
@@ -105,11 +106,12 @@ export function SensorPanel(props: SensorPanelProps) {
   async function handleResetImage(): Promise<void> {
     try {
       setImageBusy(true);
+      setImageError(null);
       const status = await deleteBlueprintImageOverride(selectedBlueprint.id);
       setImageStatus(status);
       setImageRevision((current) => current + 1);
-    } catch {
-      // no-op
+    } catch (error) {
+      setImageError(error instanceof Error ? error.message : "Image reset failed.");
     } finally {
       setImageBusy(false);
     }
@@ -121,13 +123,14 @@ export function SensorPanel(props: SensorPanelProps) {
     }
     try {
       setImageBusy(true);
+      setImageError(null);
       const blob = await fetchDeviceImage(draft.deviceId);
       const pngBlob = await convertToPng(blob);
       const status = await uploadBlueprintImageOverride(selectedBlueprint.id, pngBlob, "device-image.jpg");
       setImageStatus(status);
       setImageRevision((current) => current + 1);
-    } catch {
-      // no-op
+    } catch (error) {
+      setImageError(error instanceof Error ? error.message : "Device image fetch failed.");
     } finally {
       setImageBusy(false);
     }
@@ -237,6 +240,10 @@ export function SensorPanel(props: SensorPanelProps) {
               ) : null}
             </div>
           </div>
+
+          {imageError ? (
+            <p className="notice notice--error">{imageError}</p>
+          ) : null}
 
           <input
             accept=".png,.jpg,.jpeg,.webp,.gif,.svg,image/png,image/jpeg,image/webp,image/gif,image/svg+xml"

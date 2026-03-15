@@ -545,9 +545,9 @@ export function BlueprintPanel(props: BlueprintPanelProps) {
       setImageStatus(status);
       setImageRevision((current) => current + 1);
       setLayoutEditingEnabled(true);
-      onNotify(`Fetched device image${status.width && status.height ? ` (${status.width}x${status.height})` : ""}.`);
+      onNotify({ kind: "success", text: `Fetched device image${status.width && status.height ? ` (${status.width}x${status.height})` : ""}.` });
     } catch (error) {
-      onNotify(error instanceof Error ? error.message : "Device image fetch failed.");
+      onNotify({ kind: "error", text: error instanceof Error ? error.message : "Device image fetch failed." });
     } finally {
       setImageBusy(false);
     }

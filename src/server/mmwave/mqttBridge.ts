@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, rename, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 
 import mqtt, { type MqttClient } from "mqtt";
@@ -791,8 +791,9 @@ export class MqttStudioBridge {
   private async writeRuntimeCache(): Promise<void> {
     try {
       await mkdir(dirname(RUNTIME_CACHE_PATH), { recursive: true });
+      const tmpPath = `${RUNTIME_CACHE_PATH}.tmp`;
       await writeFile(
-        RUNTIME_CACHE_PATH,
+        tmpPath,
         JSON.stringify(
           Object.fromEntries(
             Array.from(this.runtime.entries(), ([name, state]) => [
@@ -813,6 +814,7 @@ export class MqttStudioBridge {
         ),
         "utf8"
       );
+      await rename(tmpPath, RUNTIME_CACHE_PATH);
     } catch {
       // Cache persistence is best-effort and should not break the live bridge.
     }
