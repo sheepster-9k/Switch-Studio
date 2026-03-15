@@ -1,4 +1,4 @@
-import { lazy, startTransition, Suspense, useDeferredValue, useEffect, useState } from "react";
+import { lazy, startTransition, Suspense, useDeferredValue, useEffect, useRef, useState } from "react";
 
 import { isAuthError } from "./api";
 import { AuthPanel } from "./components/AuthPanel";
@@ -195,12 +195,14 @@ export function App() {
   }, [notice]);
 
   // Ctrl+S keyboard shortcut
+  const handleSaveRef = useRef(persistence.handleSave);
+  handleSaveRef.current = persistence.handleSave;
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent): void {
       if ((event.ctrlKey || event.metaKey) && event.key === "s") {
         event.preventDefault();
         if (draft.draft && draft.dirty && !persistence.saving) {
-          void persistence.handleSave();
+          void handleSaveRef.current();
         }
       }
     }

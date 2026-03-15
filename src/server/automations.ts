@@ -2,6 +2,14 @@ import { readFile, writeFile } from "node:fs/promises";
 
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 
+/** Simple in-process mutex to serialize automations.yaml writes. */
+let automationsFileLock: Promise<void> = Promise.resolve();
+function withAutomationsLock<T>(fn: () => Promise<T>): Promise<T> {
+  const next = automationsFileLock.then(fn, fn);
+  automationsFileLock = next.then(() => {}, () => {});
+  return next;
+}
+
 import {
   type AutomationSummary,
   type DevicePropertiesResponse,
@@ -629,18 +637,20 @@ export async function exportAutomation(
     throw new Error("HA_CONFIG_PATH is not configured");
   }
 
-  let existing: unknown[] = [];
-  try {
-    const currentContent = await readFile(filePath, "utf8");
-    const parsed = parseYaml(currentContent);
-    if (Array.isArray(parsed)) {
-      existing = parsed;
+  await withAutomationsLock(async () => {
+    let existing: unknown[] = [];
+    try {
+      const currentContent = await readFile(filePath, "utf8");
+      const parsed = parseYaml(currentContent);
+      if (Array.isArray(parsed)) {
+        existing = parsed;
+      }
+    } catch {
+      // File missing or unparseable — start fresh
     }
-  } catch {
-    // File missing or unparseable — start fresh
-  }
-  existing.push(exported);
-  await writeFile(filePath, stringifyYaml(existing), "utf8");
+    existing.push(exported);
+    await writeFile(filePath, stringifyYaml(existing), "utf8");
+  });
   await wsClient.callService("automation", "reload");
 
   return normalizeAutomationEntry(exported, snapshot);

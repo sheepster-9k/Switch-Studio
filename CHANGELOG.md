@@ -2,6 +2,14 @@
 
 All notable changes to Switch Manager Studio are documented here.
 
+## [2.0.11] - 2026-03-15
+
+### Fixed
+- Auth rate limiter off-by-one: allowed 16 attempts per window instead of the intended 15
+- Automation export race condition: concurrent exports could lose writes due to unserialized read-modify-write on `automations.yaml` — added in-process mutex
+- Ctrl+S keyboard shortcut could invoke a stale `handleSave` closure — now uses a ref to always call the latest version
+- mmWave bootstrap hydration timers now call `.unref()` so they don't prevent clean process exit on shutdown
+
 ## [2.0.10] - 2026-03-15
 
 ### Changed

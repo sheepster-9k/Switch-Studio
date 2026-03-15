@@ -126,7 +126,7 @@ async function main(): Promise<void> {
     const bucket = authAttempts.get(clientIp);
     if (bucket && bucket.resetAt > now) {
       bucket.count++;
-      if (bucket.count > AUTH_RATE_MAX) {
+      if (bucket.count >= AUTH_RATE_MAX) {
         reply.code(429);
         return { error: "Too many authentication attempts. Try again later." };
       }

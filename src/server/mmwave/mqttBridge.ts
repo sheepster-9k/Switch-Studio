@@ -618,9 +618,10 @@ export class MqttStudioBridge {
         } catch (error) {
           console.warn(`Bootstrap hydration failed for ${name}:`, error);
         } finally {
-          setTimeout(() => {
+          const timer = setTimeout(() => {
             this.pendingHydrations.delete(name);
           }, 5000);
+          timer.unref();
         }
       })();
       offsetMs += 350;
