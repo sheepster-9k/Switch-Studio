@@ -425,8 +425,11 @@ export function buildDiscoveryCandidates(
     id: automation.id,
     haystack: stringifyAutomation(automation)
   }));
+  const configuredDeviceIds = new Set(
+    snapshot.configs.map((config) => config.deviceId).filter((id): id is string => Boolean(id))
+  );
   return snapshot.devices
-    .filter((device) => device.entityIds.length > 0)
+    .filter((device) => device.entityIds.length > 0 && !configuredDeviceIds.has(device.id))
     .map((device) => {
       const probableProtocol = probableProtocolFromStrings(device.manufacturer, device.model, device.name);
       const suggestedBlueprintIds = snapshot.blueprints
