@@ -614,6 +614,8 @@ export class MqttStudioBridge {
         try {
           await wait(offsetMs);
           this.publishDevice(name, { mmwave_control_commands: { controlID: "query_areas" } });
+        } catch (error) {
+          console.warn(`Bootstrap hydration failed for ${name}:`, error);
         } finally {
           setTimeout(() => {
             this.pendingHydrations.delete(name);

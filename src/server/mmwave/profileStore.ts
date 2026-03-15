@@ -117,7 +117,7 @@ export class FileProfileStore {
         : [];
       return { version: 1, profiles: sortProfiles(profiles) };
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT" || error instanceof SyntaxError) {
         const fresh: ProfileFile = { version: 1, profiles: [] };
         await this.writeStore(fresh);
         return fresh;

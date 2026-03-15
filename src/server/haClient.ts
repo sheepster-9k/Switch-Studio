@@ -72,7 +72,13 @@ export class HomeAssistantClient {
         reject,
         timer
       });
-      socket.send(JSON.stringify({ id, ...message }));
+      try {
+        socket.send(JSON.stringify({ id, ...message }));
+      } catch (sendError) {
+        this.pending.delete(id);
+        clearTimeout(timer);
+        reject(sendError instanceof Error ? sendError : new Error(String(sendError)));
+      }
     });
   }
 
