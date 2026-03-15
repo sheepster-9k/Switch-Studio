@@ -2,6 +2,12 @@
 
 All notable changes to Switch Manager Studio are documented here.
 
+## [2.1.0] - 2026-03-15
+
+### Fixed
+- Automation matching now prefers the most specific button/action (most conditions matched) instead of blindly returning the first unconditioned match — fixes false-positive matches on blueprints where button 0 has no conditions
+- WebSocket client is now captured per-request, preventing auth session changes from corrupting in-flight API requests — previously, changing auth mid-request could close the WebSocket out from under concurrent handlers
+
 ## [2.0.11] - 2026-03-15
 
 ### Fixed

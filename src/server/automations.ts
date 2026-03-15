@@ -203,32 +203,55 @@ export function inferAutomationMatch(
         continue;
       }
 
+      // Score all candidate button/action pairs and return the most specific match.
+      // A match with more satisfied conditions is preferred over an unconditioned one.
+      let bestMatch: {
+        configId: string;
+        buttonIndex: number;
+        actionIndex: number;
+        actionTitle: string;
+        configName: string;
+        score: number;
+      } | null = null;
+
       for (const [buttonIndex, button] of blueprint.buttons.entries()) {
         const rawButtonConditions = button.conditions ?? [];
-        if (
-          rawButtonConditions.length > 0 &&
-          !rawButtonConditions.every((condition) => String(getNestedValue(eventData, condition.key)) === condition.value)
-        ) {
+        const buttonMatches = rawButtonConditions.length === 0 ||
+          rawButtonConditions.every((condition) => String(getNestedValue(eventData, condition.key)) === condition.value);
+        if (!buttonMatches && rawButtonConditions.length > 0) {
           continue;
         }
 
         for (const [actionIndex, action] of button.actions.entries()) {
           const rawActionConditions = action.conditions ?? [];
-          if (
-            rawActionConditions.length > 0 &&
-            !rawActionConditions.every((condition) => String(getNestedValue(eventData, condition.key)) === condition.value)
-          ) {
+          const actionMatches = rawActionConditions.length === 0 ||
+            rawActionConditions.every((condition) => String(getNestedValue(eventData, condition.key)) === condition.value);
+          if (!actionMatches && rawActionConditions.length > 0) {
             continue;
           }
 
-          return {
-            matchedConfigId: config.id,
-            matchedButtonIndex: buttonIndex,
-            matchedActionIndex: actionIndex,
-            matchedPressCount: pressCountFromTitle(action.title),
-            matchSummary: `${config.name} / ${action.title}`
-          };
+          const score = rawButtonConditions.length + rawActionConditions.length;
+          if (!bestMatch || score > bestMatch.score) {
+            bestMatch = {
+              configId: config.id,
+              buttonIndex,
+              actionIndex,
+              actionTitle: action.title,
+              configName: config.name,
+              score
+            };
+          }
         }
+      }
+
+      if (bestMatch) {
+        return {
+          matchedConfigId: bestMatch.configId,
+          matchedButtonIndex: bestMatch.buttonIndex,
+          matchedActionIndex: bestMatch.actionIndex,
+          matchedPressCount: pressCountFromTitle(bestMatch.actionTitle),
+          matchSummary: `${bestMatch.configName} / ${bestMatch.actionTitle}`
+        };
       }
     }
   }
