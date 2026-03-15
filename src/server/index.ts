@@ -41,6 +41,7 @@ import {
   exportAutomation
 } from "./automations.js";
 import { callEntityControl, syncConfigArea } from "./entityControl.js";
+import { initMetadataStore, setPersistedMetadata, removePersistedMetadata } from "./metadataStore.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -52,6 +53,7 @@ function preferredBackend(wsClient: HomeAssistantClient): StudioBackendMode {
 
 async function main(): Promise<void> {
   const config = loadConfig();
+  initMetadataStore(config.metadataStorePath);
   const authManager = new StudioAuthManager(config);
   // On restart, restore wsClient from the most recent persisted session if no env token is set.
   const persistedSession = !config.haToken ? authManager.getLatestSession() : null;
@@ -604,6 +606,11 @@ async function main(): Promise<void> {
       // area sync and the client response both have the correct values.
       savedConfig.metadata = draft.metadata;
 
+      // Persist metadata to sidecar store so it survives HA reloads.
+      if (isRecord(draft.metadata)) {
+        await setPersistedMetadata(savedId, draft.metadata);
+      }
+
       try {
         await syncConfigArea(client, savedConfig);
       } catch (syncError) {
@@ -649,10 +656,12 @@ async function main(): Promise<void> {
     const params = request.params as { id: string };
 
     try {
-      return await client.call({
+      const result = await client.call({
         type: "switch_manager/config/delete",
         config_id: params.id
       });
+      await removePersistedMetadata(params.id);
+      return result;
     } catch (error) {
       request.log.error(error);
       reply.code(400);

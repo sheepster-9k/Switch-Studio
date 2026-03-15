@@ -2,6 +2,12 @@
 
 All notable changes to Switch Manager Studio are documented here.
 
+## [2.1.1] - 2026-03-15
+
+### Fixed
+- **Area assignments now persist across restarts** — HA's Switch Manager backend does not round-trip the `metadata` field, so area assignments (and layout overrides) were silently lost on every page refresh or add-on restart. Added a local sidecar JSON store (`data/config-metadata.json`) that persists metadata independently of HA. On snapshot load, sidecar metadata is merged back into configs before hydration.
+- Config deletion now cleans up the sidecar metadata entry
+
 ## [2.1.0] - 2026-03-15
 
 ### Fixed

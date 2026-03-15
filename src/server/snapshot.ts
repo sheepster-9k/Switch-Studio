@@ -7,6 +7,7 @@ import {
 } from "../shared/types.js";
 import { isRecord, asString, asNullableString, asArray } from "../shared/utils.js";
 import type { HomeAssistantClient } from "./haClient.js";
+import { getAllPersistedMetadata } from "./metadataStore.js";
 import { normalizeBlueprint, normalizeConfigFromStore } from "./normalization.js";
 import {
   uniqueStrings,
@@ -17,13 +18,14 @@ import {
 } from "./resolution.js";
 
 export async function buildSnapshotWithWebsocket(client: HomeAssistantClient): Promise<StudioSnapshot> {
-  const [blueprintsResult, configsResult, areaResult, deviceResult, entityResult, statesResult] = await Promise.all([
+  const [blueprintsResult, configsResult, areaResult, deviceResult, entityResult, statesResult, persistedMetadata] = await Promise.all([
     client.call<{ blueprints: Record<string, Record<string, unknown>> }>({ type: "switch_manager/blueprints" }),
     client.call<{ configs: Record<string, Record<string, unknown>> }>({ type: "switch_manager/configs" }),
     client.call<Array<Record<string, unknown>>>({ type: "config/area_registry/list" }),
     client.call<Array<Record<string, unknown>>>({ type: "config/device_registry/list" }),
     client.call<Array<Record<string, unknown>>>({ type: "config/entity_registry/list" }),
-    client.call<Array<Record<string, unknown>>>({ type: "get_states" })
+    client.call<Array<Record<string, unknown>>>({ type: "get_states" }),
+    getAllPersistedMetadata()
   ]);
 
   return buildSnapshotFromRawData({
@@ -35,7 +37,8 @@ export async function buildSnapshotWithWebsocket(client: HomeAssistantClient): P
     configsRaw: Object.entries(configsResult.configs ?? {}).map(([id, raw]) => ({ id, raw })),
     devicesRaw: deviceResult,
     entityRegistryRaw: entityResult,
-    entityStatesRaw: statesResult
+    entityStatesRaw: statesResult,
+    persistedMetadata
   });
 }
 
@@ -47,6 +50,7 @@ export function buildSnapshotFromRawData(input: {
   devicesRaw: Array<Record<string, unknown>>;
   entityRegistryRaw: Array<Record<string, unknown>>;
   entityStatesRaw: Array<Record<string, unknown>>;
+  persistedMetadata?: Record<string, Record<string, unknown>>;
 }): StudioSnapshot {
   const statesByEntityId = new Map<string, Record<string, unknown>>();
   for (const rawState of input.entityStatesRaw) {
@@ -160,8 +164,20 @@ export function buildSnapshotFromRawData(input: {
     .sort((left, right) => left.name.localeCompare(right.name));
 
   const blueprints = [...input.blueprints].sort((left, right) => left.name.localeCompare(right.name));
+  const pm = input.persistedMetadata ?? {};
   const configs = hydrateConfigLinks(
-    input.configsRaw.map(({ id, raw }) => normalizeConfigFromStore(id, raw)),
+    input.configsRaw.map(({ id, raw }) => {
+      const config = normalizeConfigFromStore(id, raw);
+      // HA's Switch Manager backend does not round-trip the metadata field.
+      // Merge persisted sidecar metadata so area assignments survive reloads.
+      const sidecar = pm[id];
+      if (isRecord(sidecar) && !isRecord(config.metadata)) {
+        config.metadata = sidecar;
+      } else if (isRecord(sidecar) && isRecord(config.metadata)) {
+        config.metadata = { ...sidecar, ...config.metadata };
+      }
+      return config;
+    }),
     blueprints,
     deviceLinks,
     entityLinks

@@ -12,6 +12,7 @@ export interface MmwaveConfig {
 
 export interface StudioConfig {
   authSessionStorePath: string;
+  metadataStorePath: string;
   host: string;
   port: number;
   haBaseUrl: string;
@@ -58,6 +59,7 @@ export function loadConfig(): StudioConfig {
 
   return {
     authSessionStorePath: resolveDataPath(process.env.SWITCH_MANAGER_AUTH_SESSION_STORE ?? "data/auth-sessions.json"),
+    metadataStorePath: resolveDataPath(process.env.SWITCH_MANAGER_METADATA_STORE ?? "data/config-metadata.json"),
     host: process.env.HOST ?? "0.0.0.0",
     port: Number(process.env.PORT ?? "8878"),
     haBaseUrl,
