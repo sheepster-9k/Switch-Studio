@@ -58,8 +58,8 @@ export function LearnPanel(props: LearnPanelProps) {
         </p>
       ) : null}
       <div className="stack-list">
-        {(learning?.events ?? []).slice(0, 12).map((event) => (
-          <div className="stack-card" key={`${event.capturedAt}-${event.identifier}-${event.button}-${event.action}`}>
+        {(learning?.events ?? []).slice(0, 12).map((event, index) => (
+          <div className="stack-card" key={`${index}-${event.capturedAt}-${event.identifier}-${event.button}-${event.action}`}>
             <div className="stack-card__top">
               <div>
                 <strong>{summarizeLearnedEvent(event)}</strong>

@@ -1,4 +1,4 @@
-import { useDeferredValue, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useDeferredValue, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { parse as parseYaml } from "yaml";
 
 import {
@@ -804,13 +804,18 @@ function ServiceStepEditor(props: {
   step: SequenceStep;
 }) {
   const { devicesById, entitiesById, onChange, snapshot, step } = props;
-  const [targetKind, setTargetKind] = useState<TargetKind>(stepTargetKind(step));
+  const derivedTargetKind = stepTargetKind(step);
+  const [targetKind, setTargetKind] = useState<TargetKind>(derivedTargetKind);
   const [targetSearch, setTargetSearch] = useState("");
   const chosenTargetIds = selectedTargetIds(step, targetKind);
+  const prevDerivedKindRef = useRef(derivedTargetKind);
 
   useEffect(() => {
-    setTargetKind(stepTargetKind(step));
-  }, [step]);
+    if (derivedTargetKind !== prevDerivedKindRef.current) {
+      prevDerivedKindRef.current = derivedTargetKind;
+      setTargetKind(derivedTargetKind);
+    }
+  }, [derivedTargetKind]);
 
   const availableTargets = useMemo(
     () => buildTargetOptions(snapshot, targetKind, targetSearch),
@@ -2008,15 +2013,17 @@ function YamlFieldEditor<T>(props: {
   const [committedYaml, setCommittedYaml] = useState(() => formatYaml(value));
   const [text, setText] = useState(committedYaml);
   const [error, setError] = useState<string | null>(null);
+  const prevValueRef = useRef(value);
 
   useEffect(() => {
-    const formatted = formatYaml(value);
-    if (formatted !== committedYaml) {
+    if (value !== prevValueRef.current) {
+      prevValueRef.current = value;
+      const formatted = formatYaml(value);
       setCommittedYaml(formatted);
       setText(formatted);
       setError(null);
     }
-  }, [value, committedYaml]);
+  }, [value]);
 
   return (
     <label className="field">

@@ -30,14 +30,14 @@ export async function buildSnapshotWithWebsocket(client: HomeAssistantClient): P
 
   return buildSnapshotFromRawData({
     haBaseUrl: client.baseUrl,
-    areasRaw: areaResult,
-    blueprints: Object.entries(blueprintsResult.blueprints ?? {}).map(([id, raw]) =>
+    areasRaw: areaResult ?? [],
+    blueprints: Object.entries(blueprintsResult?.blueprints ?? {}).map(([id, raw]) =>
       normalizeBlueprint({ id, ...raw })
     ),
-    configsRaw: Object.entries(configsResult.configs ?? {}).map(([id, raw]) => ({ id, raw })),
-    devicesRaw: deviceResult,
-    entityRegistryRaw: entityResult,
-    entityStatesRaw: statesResult,
+    configsRaw: Object.entries(configsResult?.configs ?? {}).map(([id, raw]) => ({ id, raw })),
+    devicesRaw: deviceResult ?? [],
+    entityRegistryRaw: entityResult ?? [],
+    entityStatesRaw: statesResult ?? [],
     persistedMetadata
   });
 }

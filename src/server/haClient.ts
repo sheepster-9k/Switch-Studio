@@ -138,7 +138,8 @@ export class HomeAssistantClient {
     if (this.config.haToken) {
       headers.set("Authorization", `Bearer ${this.config.haToken}`);
     }
-    return fetch(`${this.config.haBaseUrl}${path}`, { ...init, headers });
+    const url = /^https?:\/\//i.test(path) ? path : `${this.config.haBaseUrl}${path}`;
+    return fetch(url, { ...init, headers });
   }
 
   private async connect(): Promise<void> {

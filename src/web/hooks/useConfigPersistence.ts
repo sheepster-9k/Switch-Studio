@@ -103,14 +103,9 @@ export function useConfigPersistence(deps: {
     });
     try {
       await setConfigEnabled(draft.id, nextEnabled);
-      const reloaded = await loadStudio(draft.id, { blocking: false });
       setNotice({
-        kind: reloaded ? "success" : "error",
-        text: reloaded
-          ? nextEnabled
-            ? "Switch enabled."
-            : "Switch disabled."
-          : "The switch state changed, but the studio refresh failed."
+        kind: "success",
+        text: nextEnabled ? "Switch enabled." : "Switch disabled."
       });
     } catch (error) {
       updateDraft((nextDraft) => {

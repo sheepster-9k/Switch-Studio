@@ -104,8 +104,8 @@ export function App() {
   /** Shared by onUseBlueprint / onUseCandidate — sets draft, switches to editor, shows notice. */
   function applyNewDraft(config: import("../shared/types").SwitchManagerConfig, message: string): void {
     draft.setSelectedConfigId("");
-    draft.setDraft(config);
     draft.resetDraftSelections();
+    draft.setDraft(config);
     setActiveWorkspace("editor");
     setNotice({ kind: "success", text: message });
   }
