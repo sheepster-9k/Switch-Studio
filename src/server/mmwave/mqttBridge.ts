@@ -1007,11 +1007,9 @@ export class MqttStudioBridge {
     }
 
     await this.updateSettings(name, profileToSettings(profile));
-    await Promise.all([
-      this.publishAreaCollection(name, "detection", profile.areas.detection),
-      this.publishAreaCollection(name, "interference", profile.areas.interference, true),
-      this.publishAreaCollection(name, "stay", profile.areas.stay)
-    ]);
+    await this.publishAreaCollection(name, "detection", profile.areas.detection);
+    await this.publishAreaCollection(name, "stay", profile.areas.stay);
+    await this.publishAreaCollection(name, "interference", profile.areas.interference, true);
     await wait(800);
     return this.queryAreas(name);
   }

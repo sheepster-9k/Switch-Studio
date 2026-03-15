@@ -13,7 +13,8 @@ export default defineConfig({
     host: "0.0.0.0",
     port: 5175,
     proxy: {
-      "/api": "http://localhost:8878"
+      "/api": "http://localhost:8878",
+      "/ws": { target: "http://localhost:8878", ws: true }
     }
   }
 });

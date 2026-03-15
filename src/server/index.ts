@@ -1597,6 +1597,12 @@ async function loadDeviceProperties(
   };
 }
 
+const CONTROLLABLE_DOMAINS = new Set([
+  "switch", "light", "fan", "cover", "lock", "climate", "media_player",
+  "input_boolean", "input_number", "input_select", "input_button",
+  "button", "number", "select", "scene", "script", "vacuum", "siren"
+]);
+
 async function callEntityControl(
   wsClient: HomeAssistantClient,
   entityId: string,
@@ -1604,6 +1610,9 @@ async function callEntityControl(
   value?: unknown
 ): Promise<void> {
   const domain = entityId.split(".")[0];
+  if (!CONTROLLABLE_DOMAINS.has(domain)) {
+    throw new Error(`Domain "${domain}" is not allowed for entity control`);
+  }
   const target = { entity_id: entityId };
 
   if (action === "toggle" || action === "turn_on" || action === "turn_off") {
@@ -1738,9 +1747,18 @@ async function exportAutomation(
     throw new Error("HA_CONFIG_PATH is not configured");
   }
 
-  const currentContent = await readFile(filePath, "utf8");
-  const nextContent = `${currentContent.replace(/\s*$/, "\n")}${stringifyYaml([exported])}`;
-  await writeFile(filePath, `${nextContent.replace(/\s*$/, "\n")}`, "utf8");
+  let existing: unknown[] = [];
+  try {
+    const currentContent = await readFile(filePath, "utf8");
+    const parsed = parseYaml(currentContent);
+    if (Array.isArray(parsed)) {
+      existing = parsed;
+    }
+  } catch {
+    // File missing or unparseable — start fresh
+  }
+  existing.push(exported);
+  await writeFile(filePath, stringifyYaml(existing), "utf8");
   await wsClient.callService("automation", "reload");
 
   return normalizeAutomationEntry(exported, snapshot);

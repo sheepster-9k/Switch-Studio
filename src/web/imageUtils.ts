@@ -2,7 +2,7 @@ const MAX_BLUEPRINT_IMAGE_WIDTH = 800;
 const MAX_BLUEPRINT_IMAGE_HEIGHT = 500;
 
 export function blueprintImageUrl(blueprintId: string, revision = 0): string {
-  return `/api/blueprints/${encodeURIComponent(blueprintId)}/image?v=${revision}`;
+  return `api/blueprints/${encodeURIComponent(blueprintId)}/image?v=${revision}`;
 }
 
 export function loadImageElement(src: string): Promise<HTMLImageElement> {
