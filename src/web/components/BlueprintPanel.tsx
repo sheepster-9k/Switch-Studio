@@ -15,6 +15,7 @@ import type {
   SwitchManagerConfig,
   SwitchManagerGridSettings
 } from "../../shared/types";
+import { clamp } from "../../shared/utils";
 import {
   blueprintViewBox,
   buttonBounds,
@@ -124,10 +125,6 @@ async function loadBlueprintImageSize(blueprintId: string, revision = 0): Promis
   return size;
 }
 
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(Math.max(value, min), max);
-}
 
 function resolveBlueprintViewport(
   blueprint: SwitchManagerBlueprint,

@@ -1,4 +1,5 @@
 import type { AreaCollection, AreaKind, AreaRect, AreaSlot, DeviceAreaLabels, StudioProfile } from "./mmwaveTypes.js";
+export { clamp } from "./utils.js";
 
 export const ZERO_AREA: AreaRect = {
   width_min: 0,
@@ -18,10 +19,6 @@ export function isFiniteNumber(value: unknown): value is number {
 
 export function finiteOr(value: unknown, fallback: number): number {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
-}
-
-export function clamp(value: number, min: number, max: number): number {
-  return Math.min(max, Math.max(min, value));
 }
 
 export function cloneArea(area?: Partial<AreaRect> | null): AreaRect {

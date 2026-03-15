@@ -2,6 +2,15 @@
 
 All notable changes to Switch Manager Studio are documented here.
 
+## [2.0.8] - 2026-03-15
+
+### Changed
+- Decomposed `server/index.ts` from 2,535 to 767 lines — extracted 7 focused modules: normalization, resolution, blueprintUtils, tarBuilder, snapshot, automations, entityControl
+- Decomposed `App.tsx` from 1,186 to 661 lines — extracted 5 custom hooks: useAuthSession, useStudioData, useDraftConfig, useConfigPersistence, useLearningSession
+- Extracted 541 lines of pure utility functions from `SequenceEditor.tsx` into `sequence/stepUtils.ts`
+- Consolidated duplicate `isRecord`, `asNumber`, `cloneValue`, and `clamp` definitions into `shared/utils.ts`
+- No logic changes — purely mechanical extraction and deduplication
+
 ## [2.0.7] - 2026-03-15
 
 ### Fixed

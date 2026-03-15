@@ -14,27 +14,16 @@ import type {
   SwitchManagerMetadata,
   TargetKind
 } from "../shared/types";
+import { cloneValue, isRecord, asNumber } from "../shared/utils";
+
+export { isRecord };
 
 export function cloneConfig(config: SwitchManagerConfig): SwitchManagerConfig {
-  if (typeof structuredClone === "function") {
-    return structuredClone(config);
-  }
-  return JSON.parse(JSON.stringify(config)) as SwitchManagerConfig;
+  return cloneValue(config);
 }
 
 export function cloneStep(step: SequenceStep): SequenceStep {
-  if (typeof structuredClone === "function") {
-    return structuredClone(step);
-  }
-  return JSON.parse(JSON.stringify(step)) as SequenceStep;
-}
-
-export function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
-}
-
-function asNumber(value: unknown, fallback: number): number {
-  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+  return cloneValue(step);
 }
 
 export function asArray(value: unknown): string[] {
