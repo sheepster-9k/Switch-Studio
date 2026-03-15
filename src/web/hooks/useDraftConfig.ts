@@ -179,6 +179,20 @@ export function useDraftConfig(deps: {
     updateSelectedStep(() => cloneStep(step));
   }
 
+  function ensureVirtualAction(
+    button: SwitchManagerConfig["buttons"][number],
+    pressCount: number,
+    defaultMode = "single"
+  ) {
+    let virtual = button.virtualActions.find((entry) => entry.pressCount === pressCount);
+    if (!virtual) {
+      virtual = { title: `press ${pressCount}x`, pressCount, mode: defaultMode, sequence: [] };
+      button.virtualActions.push(virtual);
+      button.virtualActions.sort((left, right) => left.pressCount - right.pressCount);
+    }
+    return virtual;
+  }
+
   function updateVirtualAction(
     pressCount: number,
     next: Partial<{ title: string; mode: string; sequence: SequenceStep[] }>
@@ -188,17 +202,7 @@ export function useDraftConfig(deps: {
       if (!button) {
         return;
       }
-      let virtual = button.virtualActions.find((entry) => entry.pressCount === pressCount);
-      if (!virtual) {
-        virtual = {
-          title: `press ${pressCount}x`,
-          pressCount,
-          mode: "single",
-          sequence: []
-        };
-        button.virtualActions.push(virtual);
-        button.virtualActions.sort((left, right) => left.pressCount - right.pressCount);
-      }
+      const virtual = ensureVirtualAction(button, pressCount);
       if (next.title !== undefined) {
         virtual.title = next.title;
       }
@@ -235,17 +239,7 @@ export function useDraftConfig(deps: {
         if (!button) {
           return;
         }
-        let virtual = button.virtualActions.find((entry) => entry.pressCount === selectedVirtualPressCount);
-        if (!virtual) {
-          virtual = {
-            title: `press ${selectedVirtualPressCount}x`,
-            pressCount: selectedVirtualPressCount,
-            mode: automation.mode ?? "single",
-            sequence: []
-          };
-          button.virtualActions.push(virtual);
-          button.virtualActions.sort((left, right) => left.pressCount - right.pressCount);
-        }
+        const virtual = ensureVirtualAction(button, selectedVirtualPressCount, automation.mode);
         virtual.mode = automation.mode ?? virtual.mode;
         virtual.sequence = automation.actions.map((step) => cloneStep(step));
       } else {

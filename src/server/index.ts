@@ -62,6 +62,22 @@ async function main(): Promise<void> {
   const app = Fastify({ logger: true, bodyLimit: MAX_BODY_BYTES });
   const webRoot = resolve(__dirname, "../web");
 
+  type RouteReply = import("fastify").FastifyReply;
+  function guardHa(reply: RouteReply): { error: string } | null {
+    if (preferredBackend(wsClient) === "none") {
+      reply.code(503);
+      return { error: "HA_TOKEN is not configured" };
+    }
+    return null;
+  }
+  function guardHaConfig(reply: RouteReply): { error: string } | null {
+    if (!config.haConfigPath) {
+      reply.code(501);
+      return { error: "This feature requires HA_CONFIG_PATH" };
+    }
+    return null;
+  }
+
   // Security headers
   app.addHook("onSend", async (_request, reply) => {
     void reply.header("X-Content-Type-Options", "nosniff");
@@ -182,10 +198,8 @@ async function main(): Promise<void> {
   });
 
   app.get("/api/snapshot", async (request, reply) => {
-    if (preferredBackend(wsClient) === "none") {
-      reply.code(503);
-      return { error: "HA_TOKEN is not configured" };
-    }
+    const haGuard = guardHa(reply);
+    if (haGuard) return haGuard;
 
     try {
       return await buildSnapshotWithWebsocket(wsClient);
@@ -197,10 +211,8 @@ async function main(): Promise<void> {
   });
 
   app.get("/api/discovery", async (request, reply) => {
-    if (preferredBackend(wsClient) === "none") {
-      reply.code(503);
-      return { error: "HA_TOKEN is not configured" };
-    }
+    const haGuard = guardHa(reply);
+    if (haGuard) return haGuard;
 
     try {
       const snapshot = await buildSnapshotWithWebsocket(wsClient);
@@ -221,14 +233,10 @@ async function main(): Promise<void> {
   });
 
   app.get("/api/automations", async (request, reply) => {
-    if (preferredBackend(wsClient) === "none") {
-      reply.code(503);
-      return { error: "HA_TOKEN is not configured" };
-    }
-    if (!config.haConfigPath) {
-      reply.code(501);
-      return { error: "Automation import/export requires HA_CONFIG_PATH" };
-    }
+    const haGuard = guardHa(reply);
+    if (haGuard) return haGuard;
+    const cfgGuard = guardHaConfig(reply);
+    if (cfgGuard) return cfgGuard;
 
     try {
       const snapshot = await buildSnapshotWithWebsocket(wsClient);
@@ -241,14 +249,10 @@ async function main(): Promise<void> {
   });
 
   app.post("/api/automations/export", async (request, reply) => {
-    if (preferredBackend(wsClient) === "none") {
-      reply.code(503);
-      return { error: "HA_TOKEN is not configured" };
-    }
-    if (!config.haConfigPath) {
-      reply.code(501);
-      return { error: "Automation export requires HA_CONFIG_PATH" };
-    }
+    const haGuard = guardHa(reply);
+    if (haGuard) return haGuard;
+    const cfgGuard = guardHaConfig(reply);
+    if (cfgGuard) return cfgGuard;
 
     const body = request.body as {
       configId?: string;
@@ -388,14 +392,10 @@ async function main(): Promise<void> {
   });
 
   app.get("/api/learning", async (request, reply) => {
-    if (preferredBackend(wsClient) === "none") {
-      reply.code(503);
-      return { error: "HA_TOKEN is not configured" };
-    }
-    if (!config.haConfigPath) {
-      reply.code(501);
-      return { error: "Learn mode requires HA_CONFIG_PATH" };
-    }
+    const haGuard = guardHa(reply);
+    if (haGuard) return haGuard;
+    const cfgGuard = guardHaConfig(reply);
+    if (cfgGuard) return cfgGuard;
 
     try {
       const store = await loadLearningStore(config);
@@ -415,14 +415,10 @@ async function main(): Promise<void> {
   });
 
   app.post("/api/learning/start", async (request, reply) => {
-    if (preferredBackend(wsClient) === "none") {
-      reply.code(503);
-      return { error: "HA_TOKEN is not configured" };
-    }
-    if (!config.haConfigPath) {
-      reply.code(501);
-      return { error: "Learn mode requires HA_CONFIG_PATH" };
-    }
+    const haGuard = guardHa(reply);
+    if (haGuard) return haGuard;
+    const cfgGuard = guardHaConfig(reply);
+    if (cfgGuard) return cfgGuard;
 
     const body = request.body as {
       blueprintId?: string;
@@ -450,14 +446,10 @@ async function main(): Promise<void> {
   });
 
   app.post("/api/learning/stop", async (request, reply) => {
-    if (preferredBackend(wsClient) === "none") {
-      reply.code(503);
-      return { error: "HA_TOKEN is not configured" };
-    }
-    if (!config.haConfigPath) {
-      reply.code(501);
-      return { error: "Learn mode requires HA_CONFIG_PATH" };
-    }
+    const haGuard = guardHa(reply);
+    if (haGuard) return haGuard;
+    const cfgGuard = guardHaConfig(reply);
+    if (cfgGuard) return cfgGuard;
 
     try {
       await wsClient.callService("switch_manager", "stop_learning");
@@ -470,14 +462,10 @@ async function main(): Promise<void> {
   });
 
   app.post("/api/learning/clear", async (request, reply) => {
-    if (preferredBackend(wsClient) === "none") {
-      reply.code(503);
-      return { error: "HA_TOKEN is not configured" };
-    }
-    if (!config.haConfigPath) {
-      reply.code(501);
-      return { error: "Learn mode requires HA_CONFIG_PATH" };
-    }
+    const haGuard = guardHa(reply);
+    if (haGuard) return haGuard;
+    const cfgGuard = guardHaConfig(reply);
+    if (cfgGuard) return cfgGuard;
 
     try {
       await wsClient.callService("switch_manager", "clear_learning_library");
@@ -490,10 +478,8 @@ async function main(): Promise<void> {
   });
 
   app.get("/api/devices/:id/properties", async (request, reply) => {
-    if (preferredBackend(wsClient) === "none") {
-      reply.code(503);
-      return { error: "HA_TOKEN is not configured" };
-    }
+    const haGuard = guardHa(reply);
+    if (haGuard) return haGuard;
 
     try {
       const params = request.params as { id: string };
@@ -507,10 +493,8 @@ async function main(): Promise<void> {
   });
 
   app.get("/api/devices/:deviceId/image", async (request, reply) => {
-    if (preferredBackend(wsClient) === "none") {
-      reply.code(503);
-      return { error: "HA_TOKEN is not configured" };
-    }
+    const haGuard = guardHa(reply);
+    if (haGuard) return haGuard;
 
     const params = request.params as { deviceId: string };
 
@@ -557,10 +541,8 @@ async function main(): Promise<void> {
   });
 
   app.post("/api/entities/control", async (request, reply) => {
-    if (preferredBackend(wsClient) === "none") {
-      reply.code(503);
-      return { error: "HA_TOKEN is not configured" };
-    }
+    const haGuard = guardHa(reply);
+    if (haGuard) return haGuard;
 
     const body = request.body as { entityId?: string; action?: string; value?: unknown };
     if (typeof body?.entityId !== "string" || typeof body?.action !== "string") {
@@ -579,10 +561,8 @@ async function main(): Promise<void> {
   });
 
   app.post("/api/configs/save", async (request, reply) => {
-    if (preferredBackend(wsClient) === "none") {
-      reply.code(503);
-      return { error: "HA_TOKEN is not configured" };
-    }
+    const haGuard = guardHa(reply);
+    if (haGuard) return haGuard;
 
     const body = request.body as SaveConfigRequest | undefined;
     if (!body || !isRecord(body.config)) {
@@ -635,10 +615,8 @@ async function main(): Promise<void> {
   });
 
   app.put("/api/configs/:id/enabled", async (request, reply) => {
-    if (preferredBackend(wsClient) === "none") {
-      reply.code(503);
-      return { error: "HA_TOKEN is not configured" };
-    }
+    const haGuard = guardHa(reply);
+    if (haGuard) return haGuard;
 
     const params = request.params as { id: string };
     const body = request.body as { enabled?: unknown };
@@ -661,10 +639,8 @@ async function main(): Promise<void> {
   });
 
   app.delete("/api/configs/:id", async (request, reply) => {
-    if (preferredBackend(wsClient) === "none") {
-      reply.code(503);
-      return { error: "HA_TOKEN is not configured" };
-    }
+    const haGuard = guardHa(reply);
+    if (haGuard) return haGuard;
 
     const params = request.params as { id: string };
 

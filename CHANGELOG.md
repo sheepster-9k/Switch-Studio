@@ -2,6 +2,13 @@
 
 All notable changes to Switch Manager Studio are documented here.
 
+## [2.0.10] - 2026-03-15
+
+### Changed
+- Extracted `guardHa` / `guardHaConfig` route guard helpers to replace 21 repeated inline guard blocks across server routes
+- Extracted `ensureVirtualAction` helper in `useDraftConfig` to deduplicate virtual action find-or-create logic
+- Consolidated near-identical `onUseBlueprint` / `onUseCandidate` handlers via shared `applyNewDraft` helper in App.tsx
+
 ## [2.0.9] - 2026-03-15
 
 ### Fixed

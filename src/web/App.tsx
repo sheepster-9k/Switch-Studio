@@ -101,6 +101,15 @@ export function App() {
     });
   }
 
+  /** Shared by onUseBlueprint / onUseCandidate — sets draft, switches to editor, shows notice. */
+  function applyNewDraft(config: import("../shared/types").SwitchManagerConfig, message: string): void {
+    draft.setSelectedConfigId("");
+    draft.setDraft(config);
+    draft.resetDraftSelections();
+    setActiveWorkspace("editor");
+    setNotice({ kind: "success", text: message });
+  }
+
   // --- Draft config (needs snapshot from studio, but studio needs draft callbacks) ---
   // We break the circular dependency by using a ref-style pattern:
   // useStudioData receives an onSnapshotLoaded callback that calls into draft.applySnapshot.
@@ -583,25 +592,13 @@ export function App() {
                 candidates={studio.discovery}
                 onUseBlueprint={(blueprintId) => {
                   const blueprint = draft.blueprintsById.get(blueprintId);
-                  if (!blueprint) {
-                    return;
-                  }
-                  draft.setSelectedConfigId("");
-                  draft.setDraft(createDraftFromBlueprint(blueprint));
-                  draft.resetDraftSelections();
-                  setActiveWorkspace("editor");
-                  setNotice({ kind: "success", text: `Created a base config from ${blueprint.name}.` });
+                  if (!blueprint) return;
+                  applyNewDraft(createDraftFromBlueprint(blueprint), `Created a base config from ${blueprint.name}.`);
                 }}
                 onUseCandidate={(candidate, blueprintId) => {
                   const blueprint = draft.blueprintsById.get(blueprintId);
-                  if (!blueprint) {
-                    return;
-                  }
-                  draft.setSelectedConfigId("");
-                  draft.setDraft(createDraftFromDiscovery(candidate, blueprint));
-                  draft.resetDraftSelections();
-                  setActiveWorkspace("editor");
-                  setNotice({ kind: "success", text: `Created a draft for ${candidate.name}.` });
+                  if (!blueprint) return;
+                  applyNewDraft(createDraftFromDiscovery(candidate, blueprint), `Created a draft for ${candidate.name}.`);
                 }}
               />
             ) : null}
