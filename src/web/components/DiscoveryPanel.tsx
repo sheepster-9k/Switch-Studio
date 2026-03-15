@@ -1,6 +1,6 @@
 import { useDeferredValue, useEffect, useMemo, useState } from "react";
 
-import type { DiscoveryCandidate, SwitchManagerBlueprint } from "../../shared/types";
+import type { DiscoveryCandidate, DiscoveryDeviceType, SwitchManagerBlueprint } from "../../shared/types";
 
 interface DiscoveryPanelProps {
   blueprintsById: Map<string, SwitchManagerBlueprint>;
@@ -42,13 +42,38 @@ export function DiscoveryPanel(props: DiscoveryPanelProps) {
   const [mode, setMode] = useState<DiscoveryMode>("candidate");
   const [candidateSearch, setCandidateSearch] = useState("");
   const [blueprintSearch, setBlueprintSearch] = useState("");
+  const [manufacturerFilter, setManufacturerFilter] = useState("");
+  const [protocolFilter, setProtocolFilter] = useState("");
+  const [typeFilter, setTypeFilter] = useState<DiscoveryDeviceType | "">("");
   const deferredCandidateSearch = useDeferredValue(candidateSearch);
   const deferredBlueprintSearch = useDeferredValue(blueprintSearch);
 
+  const manufacturers = useMemo(() => {
+    const set = new Set<string>();
+    for (const c of candidates) {
+      if (c.manufacturer) set.add(c.manufacturer);
+    }
+    return [...set].sort((a, b) => a.localeCompare(b));
+  }, [candidates]);
+
+  const protocols = useMemo(() => {
+    const set = new Set<string>();
+    for (const c of candidates) {
+      if (c.probableProtocol) set.add(c.probableProtocol);
+    }
+    return [...set].sort((a, b) => a.localeCompare(b));
+  }, [candidates]);
+
   const filteredCandidates = useMemo(() => {
     const query = deferredCandidateSearch.trim().toLowerCase();
-    return candidates.filter((candidate) => (query ? discoverySearchText(candidate, blueprintsById).includes(query) : true));
-  }, [blueprintsById, candidates, deferredCandidateSearch]);
+    return candidates.filter((candidate) => {
+      if (typeFilter && candidate.deviceType !== typeFilter) return false;
+      if (manufacturerFilter && candidate.manufacturer !== manufacturerFilter) return false;
+      if (protocolFilter && candidate.probableProtocol !== protocolFilter) return false;
+      if (query && !discoverySearchText(candidate, blueprintsById).includes(query)) return false;
+      return true;
+    });
+  }, [blueprintsById, candidates, deferredCandidateSearch, manufacturerFilter, protocolFilter, typeFilter]);
 
   const [selectedCandidateId, setSelectedCandidateId] = useState("");
   const selectedCandidate =
@@ -180,6 +205,37 @@ export function DiscoveryPanel(props: DiscoveryPanelProps) {
                   value={candidateSearch}
                 />
               </label>
+
+              <div className="discovery-filter-row">
+                <label className="field">
+                  <span>Type</span>
+                  <select onChange={(event) => setTypeFilter(event.target.value as DiscoveryDeviceType | "")} value={typeFilter}>
+                    <option value="">All types</option>
+                    <option value="switch">Switch / Remote</option>
+                    <option value="motion">Motion Sensor</option>
+                    <option value="doorbell">Doorbell</option>
+                    <option value="other">Other</option>
+                  </select>
+                </label>
+                <label className="field">
+                  <span>Manufacturer</span>
+                  <select onChange={(event) => setManufacturerFilter(event.target.value)} value={manufacturerFilter}>
+                    <option value="">All</option>
+                    {manufacturers.map((m) => (
+                      <option key={m} value={m}>{m}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="field">
+                  <span>Protocol</span>
+                  <select onChange={(event) => setProtocolFilter(event.target.value)} value={protocolFilter}>
+                    <option value="">All</option>
+                    {protocols.map((p) => (
+                      <option key={p} value={p}>{p}</option>
+                    ))}
+                  </select>
+                </label>
+              </div>
 
               <div className="discovery-list">
                 {filteredCandidates.length === 0 ? (

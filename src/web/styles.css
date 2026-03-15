@@ -893,6 +893,12 @@ button:focus-visible,
   overflow: auto;
 }
 
+.discovery-filter-row {
+  display: grid;
+  gap: 0.65rem;
+  grid-template-columns: repeat(3, 1fr);
+}
+
 .discovery-list {
   max-height: 42rem;
   padding-right: 0.15rem;

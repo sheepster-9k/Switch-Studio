@@ -177,6 +177,8 @@ export interface SaveConfigRequest {
   config: SwitchManagerConfig;
 }
 
+export type DiscoveryDeviceType = "switch" | "motion" | "doorbell" | "other";
+
 export interface DiscoveryCandidate {
   id: string;
   name: string;
@@ -188,6 +190,7 @@ export interface DiscoveryCandidate {
   /** Flattened HA device-registry identifiers (IEEE address, Z-Wave node ref, etc.). */
   identifiers: string[];
   probableProtocol: string | null;
+  deviceType: DiscoveryDeviceType;
   /** Identifier pre-filled from device registry data; may be empty if no confident match. */
   suggestedIdentifier: string;
   suggestedBlueprintIds: string[];

@@ -15,6 +15,7 @@ import {
   type DevicePropertiesResponse,
   type DeviceSummary,
   type DiscoveryCandidate,
+  type DiscoveryDeviceType,
   type LearnedEvent,
   type LearningSession,
   type PropertyControlType,
@@ -358,7 +359,17 @@ export function tokenize(value: string | null | undefined): string[] {
     .filter((entry) => entry.length >= 2);
 }
 
-export function scoreBlueprintSuggestion(device: DeviceSummary, blueprint: SwitchManagerBlueprint): number {
+export function scoreBlueprintSuggestion(
+  device: DeviceSummary,
+  blueprint: SwitchManagerBlueprint,
+  deviceProtocol: string | null
+): number {
+  // If both sides have a known protocol and they disagree, hard exclude
+  const bpProtocol = probableProtocolFromStrings(blueprint.service, blueprint.eventType, blueprint.id);
+  if (deviceProtocol && bpProtocol && deviceProtocol !== bpProtocol) {
+    return 0;
+  }
+
   const deviceTokens = new Set([
     ...tokenize(device.name),
     ...tokenize(device.manufacturer),
@@ -380,6 +391,32 @@ function stringifyAutomation(automation: AutomationSummary): string {
   });
 }
 
+export function classifyDeviceType(device: DeviceSummary): DiscoveryDeviceType {
+  const text = [device.name, device.model, device.manufacturer ?? ""].join(" ").toLowerCase();
+  const entities = device.entityIds.join(" ").toLowerCase();
+
+  // Doorbells are their own category even though they have button-press events
+  if (/doorbell|chime/.test(text) || /doorbell|chime/.test(entities)) {
+    return "doorbell";
+  }
+
+  // Check for physical switch/remote before motion — a switch with a built-in
+  // motion sensor (e.g. Inovelli mmWave Dimmer) is still primarily a switch
+  const hasInputEntity = device.entityIds.some((entityId) => {
+    if (entityId.startsWith("event.")) return true;
+    const entityName = entityId.split(".")[1] ?? "";
+    return /action|remote|dimmer|keypad/.test(entityName);
+  });
+  if (hasInputEntity || /switch|remote|dimmer|button|keypad|paddle|rocker|pico|fob|scene.controller/.test(text)) {
+    return "switch";
+  }
+
+  if (/motion|occupancy|presence|mmwave|pir|radar/.test(text) || /motion|occupancy|presence/.test(entities)) {
+    return "motion";
+  }
+  return "other";
+}
+
 export function buildDiscoveryCandidates(
   snapshot: StudioSnapshot,
   automations: AutomationSummary[]
@@ -395,7 +432,7 @@ export function buildDiscoveryCandidates(
       const suggestedBlueprintIds = snapshot.blueprints
         .map((blueprint) => ({
           id: blueprint.id,
-          score: scoreBlueprintSuggestion(device, blueprint)
+          score: scoreBlueprintSuggestion(device, blueprint, probableProtocol)
         }))
         .filter((entry) => entry.score > 0)
         .sort((left, right) => right.score - left.score)
@@ -416,19 +453,14 @@ export function buildDiscoveryCandidates(
         entityIds: device.entityIds,
         identifiers: device.identifiers,
         probableProtocol,
+        deviceType: classifyDeviceType(device),
         suggestedIdentifier: inferSuggestedIdentifier(device),
         suggestedBlueprintIds,
         relatedAutomationIds
       };
     })
     .filter((candidate) => {
-      const hasControllableLikeEntity = candidate.entityIds.some((entityId) =>
-        ["event.", "button.", "switch.", "select.", "number.", "binary_sensor."].some((prefix) =>
-          entityId.startsWith(prefix)
-        ) ||
-        /action|scene|button|switch|remote|dimmer/i.test(entityId)
-      );
-      return hasControllableLikeEntity || candidate.suggestedBlueprintIds.length > 0 || candidate.relatedAutomationIds.length > 0;
+      return candidate.deviceType !== "other" || candidate.suggestedBlueprintIds.length > 0 || candidate.relatedAutomationIds.length > 0;
     })
     .sort((left, right) => {
       const rightScore = right.suggestedBlueprintIds.length + right.relatedAutomationIds.length;
