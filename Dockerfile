@@ -1,4 +1,7 @@
-FROM node:22-alpine AS build
+# Build on the CI host arch so Vite/rolldown native bindings are always available.
+# The output is plain JS/CSS, so it runs on any target platform.
+ARG BUILDPLATFORM
+FROM --platform=$BUILDPLATFORM node:22-alpine AS build
 
 WORKDIR /app
 COPY package*.json ./
