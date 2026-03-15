@@ -101,7 +101,7 @@ function pickBoolean(value: unknown): boolean | null {
 }
 
 function nullableNumber(value: unknown): number | null {
-  return typeof value === "number" && Number.isFinite(value) ? value : null;
+  return isFiniteNumber(value) ? value : null;
 }
 
 function stringOr(value: unknown, fallback = ""): string {
@@ -304,14 +304,14 @@ function trackLabel(point: TargetPoint, index: number, fallback?: string): strin
   if (typeof point.label === "string" && point.label.trim()) {
     return point.label.trim();
   }
-  if (typeof point.id === "number" && Number.isFinite(point.id)) {
+  if (isFiniteNumber(point.id)) {
     return `Target ${point.id}`;
   }
   return fallback ?? `Target ${index + 1}`;
 }
 
 function trackKey(point: TargetPoint, index: number, fallback?: string): string {
-  if (typeof point.id === "number" && Number.isFinite(point.id)) {
+  if (isFiniteNumber(point.id)) {
     return `id:${point.id}`;
   }
   if (typeof point.label === "string" && point.label.trim()) {
@@ -949,10 +949,10 @@ export class MqttStudioBridge {
     if (patch.detectTrigger !== undefined) {
       payload[SETTING_KEYS.detectTrigger] = patch.detectTrigger;
     }
-    if (typeof patch.holdTime === "number" && Number.isFinite(patch.holdTime)) {
+    if (isFiniteNumber(patch.holdTime)) {
       payload[SETTING_KEYS.holdTime] = patch.holdTime;
     }
-    if (typeof patch.stayLife === "number" && Number.isFinite(patch.stayLife)) {
+    if (isFiniteNumber(patch.stayLife)) {
       payload[SETTING_KEYS.stayLife] = patch.stayLife;
     }
     if (patch.targetInfoReport !== undefined) {
@@ -961,26 +961,26 @@ export class MqttStudioBridge {
     if (patch.controlWiredDevice !== undefined) {
       payload[SETTING_KEYS.controlWiredDevice] = patch.controlWiredDevice;
     }
-    if (typeof patch.defaultLevelLocal === "number" && Number.isFinite(patch.defaultLevelLocal)) {
+    if (isFiniteNumber(patch.defaultLevelLocal)) {
       payload[SETTING_KEYS.defaultLevelLocal] = clamp(Math.round(patch.defaultLevelLocal), 1, 255);
     }
     if (patch.baseBounds) {
-      if (typeof patch.baseBounds.width_min === "number" && Number.isFinite(patch.baseBounds.width_min)) {
+      if (isFiniteNumber(patch.baseBounds.width_min)) {
         payload.mmWaveWidthMin = patch.baseBounds.width_min;
       }
-      if (typeof patch.baseBounds.width_max === "number" && Number.isFinite(patch.baseBounds.width_max)) {
+      if (isFiniteNumber(patch.baseBounds.width_max)) {
         payload.mmWaveWidthMax = patch.baseBounds.width_max;
       }
-      if (typeof patch.baseBounds.depth_min === "number" && Number.isFinite(patch.baseBounds.depth_min)) {
+      if (isFiniteNumber(patch.baseBounds.depth_min)) {
         payload.mmWaveDepthMin = patch.baseBounds.depth_min;
       }
-      if (typeof patch.baseBounds.depth_max === "number" && Number.isFinite(patch.baseBounds.depth_max)) {
+      if (isFiniteNumber(patch.baseBounds.depth_max)) {
         payload.mmWaveDepthMax = patch.baseBounds.depth_max;
       }
-      if (typeof patch.baseBounds.height_min === "number" && Number.isFinite(patch.baseBounds.height_min)) {
+      if (isFiniteNumber(patch.baseBounds.height_min)) {
         payload.mmWaveHeightMin = patch.baseBounds.height_min;
       }
-      if (typeof patch.baseBounds.height_max === "number" && Number.isFinite(patch.baseBounds.height_max)) {
+      if (isFiniteNumber(patch.baseBounds.height_max)) {
         payload.mmWaveHeightMax = patch.baseBounds.height_max;
       }
     }
@@ -997,12 +997,15 @@ export class MqttStudioBridge {
       return null;
     }
     await this.areaLabelStore.setLabel(name, kind, slot, label);
-    this.emitDevice(name);
-    return this.getDevice(name);
+    const snapshot = this.getDevice(name);
+    if (snapshot) {
+      this.broadcast({ type: "device_update", device: snapshot });
+    }
+    return snapshot;
   }
 
   async applyProfile(name: string, profile: StudioProfile): Promise<DeviceSnapshot | null> {
-    if (!this.getDevice(name)) {
+    if (!this.metas.has(name)) {
       return null;
     }
 

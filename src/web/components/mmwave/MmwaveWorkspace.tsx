@@ -13,7 +13,6 @@ import {
   mmwaveUpdateSettings
 } from "../../mmwaveApi";
 import type {
-  AreaCollection,
   AreaKind,
   AreaRect,
   AreaSlot,
@@ -25,7 +24,7 @@ import type {
   UpsertProfileRequest,
   WsServerMessage
 } from "../../../shared/mmwaveTypes";
-import { ZERO_AREA, AREA_SLOTS, clamp, rangeSpan, areaDisplayLabel } from "../../../shared/mmwaveUtils";
+import { ZERO_AREA, AREA_SLOTS, clamp, cloneArea, cloneAreaCollection, rangeSpan, areaDisplayLabel } from "../../../shared/mmwaveUtils";
 import { DeviceRail } from "./DeviceRail";
 import { HelpTip } from "./HelpTip";
 import { TeachPanel } from "./TeachPanel";
@@ -36,19 +35,6 @@ import { useMmwaveProfiles } from "./useMmwaveProfiles";
 import { useTeachRecording } from "./useTeachRecording";
 
 const DEFAULT_LEVEL_LOCAL_PREVIOUS = 255;
-
-function copyRect(area: AreaRect): AreaRect {
-  return { ...area };
-}
-
-function copyCollection(collection: AreaCollection): AreaCollection {
-  return {
-    area1: { ...collection.area1 },
-    area2: { ...collection.area2 },
-    area3: { ...collection.area3 },
-    area4: { ...collection.area4 }
-  };
-}
 
 function formatTimestamp(timestamp: string): string {
   try {
@@ -78,14 +64,6 @@ function percentFromDefaultLevelLocal(value: number | null | undefined): number 
 
 function defaultLevelLocalFromPercent(percent: number): number {
   return clamp(Math.round((clamp(percent, 1, 100) / 100) * 254), 1, 254);
-}
-
-function pluralize(value: number, singular: string, plural = `${singular}s`): string {
-  return `${value} ${value === 1 ? singular : plural}`;
-}
-
-function activeAreaCount(device: DeviceSnapshot): number {
-  return Object.values(device.settings.areaOccupancy).filter(Boolean).length;
 }
 
 function trackingStateLabel(state: TargetTrackingState): string {
@@ -236,9 +214,9 @@ function profilePayloadFromDevice(
       baseBounds: { ...device.settings.baseBounds }
     },
     areas: {
-      detection: copyCollection(device.areas.detection),
-      interference: copyCollection(device.areas.interference),
-      stay: copyCollection(device.areas.stay)
+      detection: cloneAreaCollection(device.areas.detection),
+      interference: cloneAreaCollection(device.areas.interference),
+      stay: cloneAreaCollection(device.areas.stay)
     }
   };
 }
@@ -263,7 +241,7 @@ function MmwaveWorkspace() {
   const [selectedName, setSelectedName] = useState<string | null>(null);
   const [selectedKind, setSelectedKind] = useState<AreaKind>("interference");
   const [selectedSlot, setSelectedSlot] = useState<AreaSlot>("area1");
-  const [editorRect, setEditorRect] = useState<AreaRect>(copyRect(ZERO_AREA));
+  const [editorRect, setEditorRect] = useState<AreaRect>(cloneArea(ZERO_AREA));
   const [settingsDraft, setSettingsDraft] = useState<UpdateSettingsRequest | null>(null);
   const [editorDirty, setEditorDirty] = useState(false);
   const [settingsDirty, setSettingsDirty] = useState(false);
@@ -287,7 +265,6 @@ function MmwaveWorkspace() {
   const selectedSlotLabel = device
     ? areaDisplayLabel(device.areaLabels, selectedKind, selectedSlot)
     : selectedSlot;
-  const liveAreaCount = device ? activeAreaCount(device) : 0;
   const liveTargetCount = device ? device.targetPoints.length : 0;
   const liveTrackCount = device ? device.targetTrails.length : 0;
   const trackingStatus = device ? trackingStateLabel(device.targetTrackingState) : "Occupancy fallback";
@@ -324,7 +301,7 @@ function MmwaveWorkspace() {
     if (!device) {
       return;
     }
-    setEditorRect(copyRect(device.areas[selectedKind][selectedSlot]));
+    setEditorRect(cloneArea(device.areas[selectedKind][selectedSlot]));
     setEditorDirty(false);
     setSettingsDraft(settingsDraftFromDevice(device));
     setSettingsDirty(false);
@@ -337,7 +314,7 @@ function MmwaveWorkspace() {
       return;
     }
     if (!editorDirty) {
-      setEditorRect(copyRect(device.areas[selectedKind][selectedSlot]));
+      setEditorRect(cloneArea(device.areas[selectedKind][selectedSlot]));
     }
     if (!settingsDirty) {
       setSettingsDraft(settingsDraftFromDevice(device));
@@ -367,7 +344,7 @@ function MmwaveWorkspace() {
     if (!cornerDraftRect) {
       return;
     }
-    setEditorRect(copyRect(cornerDraftRect));
+    setEditorRect(cloneArea(cornerDraftRect));
     setEditorDirty(true);
     setError(null);
   }
@@ -654,7 +631,7 @@ function MmwaveWorkspace() {
               <button
                 className="ghost-button"
                 onClick={() => {
-                  setEditorRect(copyRect(device.areas[selectedKind][selectedSlot]));
+                  setEditorRect(cloneArea(device.areas[selectedKind][selectedSlot]));
                   setEditorDirty(false);
                 }}
                 type="button"

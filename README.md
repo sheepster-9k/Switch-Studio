@@ -24,8 +24,6 @@ Switch Manager Studio is the editor, not the underlying integration. Before usin
 - Home Assistant running
 - `custom_components/switch_manager` installed and loaded
 - Switch Manager blueprints available in `blueprints/switch_manager` if you want blueprint export or raw blueprint-backed workflows
-- A Home Assistant long-lived access token
-
 Feature-specific requirements:
 
 - Learn mode requires access to the Home Assistant config directory
@@ -64,18 +62,9 @@ If Home Assistant does not pick it up immediately, restart Home Assistant or the
 
 Find `Switch Manager Studio` under `Local add-ons` and click `Install`.
 
-### 4. Create a Home Assistant token
+### 4. Start the add-on
 
-Create a long-lived access token from your Home Assistant user profile and paste it into the add-on configuration.
-
-Example add-on config:
-
-```yaml
-ha_token: YOUR_LONG_LIVED_ACCESS_TOKEN
-port: 8878
-```
-
-### 5. Start the add-on
+No token setup is required. The add-on authenticates to Home Assistant automatically using the Supervisor token.
 
 Once started:
 
@@ -90,17 +79,19 @@ That mount is what enables:
 - automation import and export
 - raw blueprint-backed package export
 
-### 6. Open the studio
+If you need to override the automatic token (rare), you can set `ha_token` in the add-on configuration to a long-lived access token.
+
+### 5. Open the studio
 
 Use the Home Assistant sidebar entry first. Direct access on port `8878` is available, but ingress is the cleanest and safest default inside Home Assistant.
 
 ## Standalone Installation
 
-Standalone mode is useful if you want to run the studio as a separate Node service on the same LAN.
+Standalone mode is useful if you want to run the studio as a separate Node service on the same LAN. Unlike the add-on, standalone installs require a long-lived access token from Home Assistant.
 
 ### Environment
 
-Set at least:
+Create a long-lived access token in Home Assistant (Profile → Security → Long-Lived Access Tokens → Create Token) and set at least:
 
 ```bash
 HA_BASE_URL=http://homeassistant.local:8123
@@ -156,7 +147,7 @@ docker run -p 8878:8878 \
 
 ### Add-on options
 
-- `ha_token`: Home Assistant long-lived access token used by the studio backend
+- `ha_token`: Optional override token. Leave blank to use the automatic Supervisor token. Only set this if you need to authenticate as a specific HA user.
 - `port`: Port exposed by the add-on, default `8878`
 
 ### Standalone environment variables
@@ -178,14 +169,16 @@ docker run -p 8878:8878 \
 
 | Feature | Requires |
 | --- | --- |
-| Config editing, save/delete, enable/disable | `HA_TOKEN` |
-| Snapshot loading and device discovery | `HA_TOKEN` |
-| Device property panel and entity control | `HA_TOKEN` |
-| Learn mode | `HA_TOKEN` + `HA_CONFIG_PATH` |
-| Automation import/export | `HA_TOKEN` + `HA_CONFIG_PATH` |
-| Blueprint package export | `HA_TOKEN` |
+| Config editing, save/delete, enable/disable | HA connection (automatic in add-on) |
+| Snapshot loading and device discovery | HA connection |
+| Device property panel and entity control | HA connection |
+| Learn mode | HA connection + `HA_CONFIG_PATH` |
+| Automation import/export | HA connection + `HA_CONFIG_PATH` |
+| Blueprint package export | HA connection |
 | Raw blueprint-backed export details | `HA_CONFIG_PATH` |
 | Blueprint image override storage | Local writable data directory |
+
+In the add-on, both the HA connection and config path are handled automatically. For standalone installs, set `HA_TOKEN` and `HA_CONFIG_PATH` as environment variables.
 
 ## Security Notes
 
@@ -197,7 +190,8 @@ docker run -p 8878:8878 \
 
 ## Troubleshooting
 
-- If the studio loads but shows authentication or snapshot errors, verify the Home Assistant token first.
+- If the add-on shows authentication errors, restart it. The Supervisor token is refreshed on each start. If problems persist, set a long-lived access token in the add-on configuration as `ha_token`.
+- In standalone mode, if the studio loads but shows authentication or snapshot errors, verify the `HA_TOKEN` environment variable.
 - If discovery works but learn mode or automation import/export does not, confirm `HA_CONFIG_PATH` is set correctly in standalone mode.
 - If blueprint images are missing, place PNG files in `data/blueprints` or rely on Home Assistant-served assets under `/assets/switch_manager`.
 - If the add-on does not appear in Home Assistant, re-scan local add-ons from the Add-on Store menu and restart Home Assistant if needed.

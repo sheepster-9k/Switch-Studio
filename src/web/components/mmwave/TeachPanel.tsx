@@ -1,5 +1,5 @@
 import type { AreaRect, AreaSlot, DeviceAreaLabels, DeviceSnapshot, TargetPoint } from "../../../shared/mmwaveTypes";
-import { areaDisplayLabel } from "../../../shared/mmwaveUtils";
+import { AREA_SLOTS, areaDisplayLabel } from "../../../shared/mmwaveUtils";
 import { HelpTip } from "./HelpTip";
 
 interface TeachPanelProps {
@@ -83,7 +83,7 @@ export function TeachPanel({
       <div className="teach-heat-grid">
         {(() => {
           const max = Math.max(1, ...Object.values(hitCounts));
-          return (["area1", "area2", "area3", "area4"] as AreaSlot[]).map((slot) => {
+          return AREA_SLOTS.map((slot) => {
           const ratio = hitCounts[slot] / max;
           return (
             <div className="teach-heat-card" key={slot}>
